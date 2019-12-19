@@ -1,0 +1,2 @@
+shaderProg :: error
+errorTexture texture2d data/texture/system/error.tga
