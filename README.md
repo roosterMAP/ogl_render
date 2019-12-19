@@ -1,2 +1,2 @@
 # ogl_render
-OpenGL rendering enging
+OpenGL rendering engine
