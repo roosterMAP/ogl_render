@@ -1,5 +1,7 @@
 #pragma once
-#include <string>
+#ifndef __STRING_H_INCLUDE__
+#define __STRING_H_INCLUDE__
+
 #include <vector>
 
 /*
@@ -77,6 +79,8 @@ class Str {
 		unsigned int m_len; //length of m_data minus the '\0' char
 		char * m_data; //ALWAYS ends with '\0'
 };
+
+#endif
 
 //SMOKE TEST
 /*

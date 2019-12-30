@@ -24,7 +24,7 @@ PostProcessManager::SetBlitParams
 	-Set blit frames for next call of BlitFramebuffer().
 ===============================
 */
-void PostProcessManager::SetBlitParams( glm::vec2 srcMin, glm::vec2 srcMax, glm::vec2 dstMin, glm::vec2 dstMax ) {
+void PostProcessManager::SetBlitParams( Vec2 srcMin, Vec2 srcMax, Vec2 dstMin, Vec2 dstMax ) {
 	//source frame
 	m_blit_srcX = ( unsigned int )srcMin.x;
 	m_blit_srcY = ( unsigned int )srcMin.y;
@@ -141,7 +141,7 @@ bool PostProcessManager::BloomEnable( float resScale ) {
 	}
 	m_bloomThresholdFBO.Unbind();
 	m_bloomThresholdFBO.CreateScreen();
-	m_bloomThreshold = glm::vec3( 0.2126, 0.7152, 0.0722 );	//hard coded for now
+	m_bloomThreshold = Vec3( 0.2126, 0.7152, 0.0722 );	//hard coded for now
 	
 	//init bloom framebuffers
 	m_bloomFBOs = new Framebuffer[2];
@@ -186,7 +186,7 @@ void PostProcessManager::Bloom() {
 	//clamp the postprocess framebuffer and write to the render target of m_bloomThresholdFBO
 	Shader * bloomThresholdShader = m_bloomThresholdFBO.GetShader();
 	bloomThresholdShader->UseProgram();
-	bloomThresholdShader->SetUniform3f( "threshold", 1, glm::value_ptr( m_bloomThreshold ) );
+	bloomThresholdShader->SetUniform3f( "threshold", 1, m_bloomThreshold.as_ptr() );
 	m_bloomThresholdFBO.Bind();	
 	m_bloomThresholdFBO.Draw( m_PostProcessFBO.m_attachements[0] );
 	m_bloomThresholdFBO.Unbind();

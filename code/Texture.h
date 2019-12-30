@@ -1,4 +1,7 @@
 #pragma once
+#ifndef __TEXTURE_H_INCLUDE__
+#define __TEXTURE_H_INCLUDE__
+
 #include <vector>
 #include <GL/glew.h>
 #include <GL/freeglut.h>
@@ -62,3 +65,5 @@ class LUTTexture : public Texture {
 	private:
 		int mDepth;
 };
+
+#endif

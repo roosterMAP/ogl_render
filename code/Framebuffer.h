@@ -9,6 +9,9 @@
 #include <GL/glew.h>
 #include <GL/glut.h>
 
+#ifndef __FRAMEBUFFER_H_INCLUDE__
+#define __FRAMEBUFFER_H_INCLUDE__
+
 /*
 ===============================
 Framebuffer
@@ -58,3 +61,5 @@ class Framebuffer {
 
 		unsigned int m_multisample;
 };
+
+#endif

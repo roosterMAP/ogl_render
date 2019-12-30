@@ -1,37 +1,43 @@
 #include "Camera.h"
+#include <math.h>
 
 Camera::Camera() {
-	fov = 45.0;
-	position = glm::vec3( 0.0, 0.0, 3.0 );
-	look = glm::vec3( 0.0, 0.0, -1.0 );
-	up = glm::vec3( 0.0, 1.0, 0.0 );
-	right = glm::normalize( glm::cross( up, look ) );
-	pitch = 0.0;
-	yaw = 0.0;
+	m_fov = 45.0;
+	m_position = Vec3( 0.0, 0.0, 3.0 );
+	m_look = Vec3( 0.0, 0.0, -1.0 );
+	m_up = Vec3( 0.0, 1.0, 0.0 );
+	m_right = m_up.cross( m_look );
+	m_right.normalize();
+	m_pitch = 0.0;
+	m_yaw = 0.0;
 }
 
-Camera::Camera( float fieldOfView, glm::vec3 camPos, glm::vec3 camLook ) {
-	fov = fieldOfView;
-	position = camPos;
-	look = camLook;
-	up = glm::vec3( 0.0, 1.0, 0.0 );
-	right = glm::normalize( glm::cross( up, look ) );
-	pitch = 0.0;
-	yaw = 0.0;
+Camera::Camera( float fieldOfView, Vec3 camPos, Vec3 camLook ) {
+	m_fov = fieldOfView;
+	m_position = camPos;
+	m_look = camLook;
+	m_up = Vec3( 0.0, 1.0, 0.0 );
+	m_right = m_up.cross( m_look );
+	m_right.normalize();
+	m_pitch = 0.0;
+	m_yaw = 0.0;
 }
 
-glm::mat4 Camera::viewMatrix() {
-	glm::mat4 mat = glm::lookAt( position, position + look, up );
+Mat4 Camera::viewMatrix() {
+	Mat4 mat = Mat4();
+	mat.LookAt( m_position, m_position + m_look, m_up );
 	return mat;
 }
 
-glm::mat4 Camera::projectionMatrix( float aspect ) {
-	glm::mat4 mat = glm::perspective( glm::radians( fov ), aspect, 0.001f, 100.0f );
+Mat4 Camera::projectionMatrix( float aspect ) {
+	Mat4 mat = Mat4();
+	mat.Perspective( to_radians( m_fov ), aspect, 0.001f, 100.0f );
 	return mat;
 }
 
-glm::mat4 Camera::projectionMatrix( float aspect, float near, float far ) {
-	glm::mat4 mat = glm::perspective( glm::radians( fov ), aspect, near, far );
+Mat4 Camera::projectionMatrix( float aspect, float near, float far ) {
+	Mat4 mat = Mat4();
+	mat.Perspective( to_radians( m_fov ), aspect, near, far );
 	return mat;
 }
 
@@ -39,22 +45,24 @@ void Camera::FPLookOffset( float offset_x, float offset_y, float sensitivity ) {
 	offset_x *= sensitivity;
 	offset_y *= sensitivity;
 
-	pitch -= offset_y;
-	yaw += offset_x;
+	m_pitch -= offset_y;
+	m_yaw += offset_x;
 
 	//constrain the pitch so the screen doesn't get flipped
-    if ( pitch > 89.0f ) {
-		pitch = 89.0f;
-	} else if ( pitch < -89.0f ) {
-		pitch = -89.0f;
+    if ( m_pitch > 89.0f ) {
+		m_pitch = 89.0f;
+	} else if ( m_pitch < -89.0f ) {
+		m_pitch = -89.0f;
 	}
 
-	glm::vec3 front;
-	front.x = cos( glm::radians( pitch ) ) * cos( glm::radians( yaw ) );
-	front.y = sin( glm::radians( pitch ) );
-	front.z = cos( glm::radians( pitch ) ) * sin( glm::radians( yaw ) );
+	Vec3 front;
+	front.x = cos( to_radians( m_pitch ) ) * cos( to_radians( m_yaw ) );
+	front.y = sin( to_radians( m_pitch ) );
+	front.z = cos( to_radians( m_pitch ) ) * sin( to_radians( m_yaw ) );
 
-	look = glm::normalize( front );
-	right = glm::normalize( glm::cross( glm::vec3( 0.0f, 1.0f, 0.0f ), look ) );
-	up = glm::cross( look, right );
+	m_look = front.normal();
+	Vec3 y_axis = Vec3( 0.0f, 1.0f, 0.0f );
+	m_right = y_axis.cross( m_look );
+	m_right.normalize();
+	m_up = m_look.cross( m_right );
 }

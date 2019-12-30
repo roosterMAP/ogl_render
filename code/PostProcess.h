@@ -1,11 +1,10 @@
 #pragma once
+#ifndef __POSTPROCESS_H_INCLUDE__
+#define __POSTPROCESS_H_INCLUDE__
+
 #include "Framebuffer.h"
 #include "Texture.h"
-
-#include <glm.hpp>
-#include <gtc/matrix_transform.hpp>
-#include <gtc/type_ptr.hpp>
-
+#include "Vector.h"
 #include "String.h"
 
 /*
@@ -21,7 +20,7 @@ class PostProcessManager {
 		PostProcessManager( unsigned int width, unsigned int height, const char * shaderPrefix );
 		~PostProcessManager() {}; //delete[] m_bloomFBOs; why doesnt this work?
 
-		void SetBlitParams( glm::vec2 srcMin, glm::vec2 srcMax, glm::vec2 dstMin, glm::vec2 dstMax );
+		void SetBlitParams( Vec2 srcMin, Vec2 srcMax, Vec2 dstMin, Vec2 dstMax );
 		void BlitFramebuffer( Framebuffer * inputFBO );
 
 		bool BloomEnable( float resScale=0.5 );
@@ -38,7 +37,7 @@ class PostProcessManager {
 		unsigned int m_blit_dstX, m_blit_dstY, m_blit_dstW, m_blit_dstH;
 
 		bool m_bloomEnabled;
-		glm::vec3 m_bloomThreshold;
+		Vec3 m_bloomThreshold;
 		Framebuffer * m_bloomFBOs;
 		Framebuffer m_bloomThresholdFBO;
 		unsigned int m_bloomRenderTarget_idx;
@@ -46,3 +45,5 @@ class PostProcessManager {
 		bool m_lutEnabled;
 		LUTTexture * m_lutTexture;
 };
+
+#endif

@@ -1,6 +1,7 @@
 #include "Console.h"
 #include "Command.h"
 #include "Fileio.h"
+#include "Matrix.h"
 
 /*
 ================================
@@ -103,7 +104,8 @@ bool Console::Init( char * fontRelativePath ) {
 	//get window properties
 	m_gScreenWidth = glutGet( GLUT_WINDOW_WIDTH );
 	m_gScreenHeight = glutGet( GLUT_WINDOW_HEIGHT );
-	glm::mat4 projection = glm::ortho( 0.0f, ( float )m_gScreenWidth, 0.0f, ( float )m_gScreenHeight );
+	Mat4 projection = Mat4();
+	projection.Orthographic( 0.0f, ( float )m_gScreenWidth, 0.0f, ( float )m_gScreenHeight );
 
 	//compile shader for background plane
 	m_backgroundShader = new Shader();
@@ -111,8 +113,8 @@ bool Console::Init( char * fontRelativePath ) {
 		return false;
 	}
 	m_backgroundShader->UseProgram();
-	glm::vec3 black = glm::vec3( 0.0, 0.0, 0.0 );
-	m_backgroundShader->SetUniform3f( "color", 1, glm::value_ptr( black ) );
+	Vec3 black = Vec3( 0.0, 0.0, 0.0 );
+	m_backgroundShader->SetUniform3f( "color", 1, black.as_ptr() );
 
 	//create background plane geo
 	InitBackgroundGeo( m_gScreenWidth, m_gScreenHeight );
@@ -140,7 +142,7 @@ bool Console::Init( char * fontRelativePath ) {
 	//init text shader
 	m_shader = m_shader->GetShader( "text" );
 	m_shader->UseProgram();
-	m_shader->SetUniformMatrix4f( "projection", 1, false, glm::value_ptr( projection ) );
+	m_shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
 
 	//init VAO and VBO used to hold text geo. this gets updated every time text is rendered in RenderText()
 	InitTextGeo();
@@ -170,8 +172,8 @@ bool Console::Init( char * fontRelativePath ) {
 		// Now store character for later use
 		Character character = {
 			texture, 
-			glm::ivec2( face->glyph->bitmap.width, face->glyph->bitmap.rows ),
-			glm::ivec2( face->glyph->bitmap_left, face->glyph->bitmap_top ),
+			IVec{ ( int )( face->glyph->bitmap.width ), ( int )( face->glyph->bitmap.rows ) },
+			IVec{ face->glyph->bitmap_left, face->glyph->bitmap_top },
 			face->glyph->advance.x
 		};
 		m_characterMap.insert( std::pair<GLchar, Character>( i, character ) );
@@ -267,14 +269,14 @@ void Console::UpdateLog() {
 		Entry currentEntry = m_logHistory[entryIdx];
 
 		unsigned int logLine_y = m_gScreenHeight - ( inputLine_y - ( m_fontHeight * ( i + 1 ) ) );
-		RenderText( currentEntry.string, 10.0f, ( float )logLine_y, 1.0f, glm::value_ptr( currentEntry.color ) );
+		RenderText( currentEntry.string, 10.0f, ( float )logLine_y, 1.0f, currentEntry.color.as_ptr() );
 	}
 
 	//draw input line of text with a text cursor
 	const float x_offset = 10.0f;
 	const float textCursorPos_y = ( float )( m_gScreenHeight - inputLine_y );
-	glm::vec3 white = glm::vec3( 1.0, 1.0, 1.0 );
-	RenderText( m_currentString, x_offset, ( float )( m_gScreenHeight - inputLine_y ), 1.0f, glm::value_ptr( white ), true );
+	Vec3 white = Vec3( 1.0, 1.0, 1.0 );
+	RenderText( m_currentString, x_offset, ( float )( m_gScreenHeight - inputLine_y ), 1.0f, white.as_ptr(), true );
 }
 
 /*
@@ -307,7 +309,7 @@ void Console::UpdateInputLine_NewLine() {
 			//it needs to be passed to the history and the input line must be cleared.
 			Entry newEntry = {
 				0,
-				glm::vec3( 1.0, 1.0, 1.0 ),
+				Vec3( 1.0, 1.0, 1.0 ),
 				m_currentString
 			};
 			m_commandHistory.push_back( newEntry );
@@ -499,8 +501,8 @@ void Console::RenderText( Str text, GLfloat x, GLfloat y, GLfloat scale, const f
 		if ( text.Length() == 0 ) {
 			cursorPos_x = 5.0f;
 		}
-		glm::vec3 green = glm::vec3( 0.0, 1.0, 0.0 );
-		RenderText( "|", cursorPos_x, y, scale, glm::value_ptr( green ), false );
+		Vec3 green = Vec3( 0.0, 1.0, 0.0 );
+		RenderText( "|", cursorPos_x, y, scale, green.as_ptr(), false );
 	}
 }
 
@@ -512,7 +514,7 @@ Console::AddInfo
 void Console::AddInfo( Str text ) {
 	Entry newEntry = {
 		0,
-		glm::vec3( 0.8, 0.8, 0.8 ), //light grey
+		Vec3( 0.8, 0.8, 0.8 ), //light grey
 		text
 	};
 
@@ -528,7 +530,7 @@ Console::AddInfo
 void Console::AddWarning( Str text ) {
 	Entry newEntry = {
 		0,
-		glm::vec3( 1.0, 0.64, 0.0 ), //orange
+		Vec3( 1.0, 0.64, 0.0 ), //orange
 		text
 	};
 
@@ -544,7 +546,7 @@ Console::AddInfo
 void Console::AddError( Str text ) {
 	Entry newEntry = {
 		0,
-		glm::vec3( 1.0, 0.0, 0.0 ), //red
+		Vec3( 1.0, 0.0, 0.0 ), //red
 		text
 	};
 

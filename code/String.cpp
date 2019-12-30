@@ -1,5 +1,6 @@
 #include "String.h"
 #include <assert.h>
+#include <string>
 
 /*
 ================================

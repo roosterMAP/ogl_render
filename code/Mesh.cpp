@@ -1,11 +1,11 @@
 #pragma once
 #include "Mesh.h"
 #include "Fileio.h"
-#include <stdio.h>
+#include <assert.h>
 #include <GL/glew.h>
 #include <GL/freeglut.h>
-#include <iostream>
-#include <cstddef>
+
+#include "mikktspace.h"
 
 #include "lx_geometry_triangulation_utilities.h"
 
@@ -74,7 +74,7 @@ void mikk_setTSpaceBasic( const SMikkTSpaceContext * pContext, const float fvTan
 	surface * data = ( surface * )pContext->m_pUserData;
 	const tri_t tri = data->tris[iFace];
 
-	glm::vec3 tangent = glm::vec3();
+	Vec3 tangent = Vec3();
 	tangent[0] = fvTangent[0];
 	tangent[1] = fvTangent[1];
 	tangent[2] = fvTangent[2];
@@ -84,10 +84,10 @@ void mikk_setTSpaceBasic( const SMikkTSpaceContext * pContext, const float fvTan
 		data->verts[tri.a].tSign = tSign;
 	} else if ( iVert == 1 ) {
 		data->verts[tri.b].tang = tangent;
-		data->verts[tri.a].tSign = tSign;
+		data->verts[tri.b].tSign = tSign;
 	} else {
 		data->verts[tri.c].tang = tangent;
-		data->verts[tri.a].tSign = tSign;
+		data->verts[tri.c].tSign = tSign;
 	}
 }
 
@@ -96,12 +96,14 @@ void mikk_setTSpaceBasic( const SMikkTSpaceContext * pContext, const float fvTan
  Transform::WorldXfrm
  ================================
  */
-bool Transform::WorldXfrm( glm::mat4x4* model ) {
-	m_xfrm = glm::mat4x4( 1.0 );
+bool Transform::WorldXfrm( Mat4* model ) {
+	m_xfrm = Mat4();
+	m_xfrm.Translate( m_position );
 
-	m_xfrm = glm::translate( m_xfrm, m_position );
-	m_xfrm = m_xfrm * glm::mat4x4( m_rotation );
-	m_xfrm = glm::scale( m_xfrm, m_scale );
+	m_xfrm = m_xfrm * m_rotation.as_Mat4();
+	for ( unsigned int i = 0; i < 3; i++ ) {
+		m_xfrm[i][i] *= m_scale[i];
+	}
 
 	*model = m_xfrm;
 
@@ -130,8 +132,8 @@ Mesh::LoadMSHFromFile
 */
 bool Mesh::LoadMSHFromFile( const char * msh_relative ) {
 	//init m_bounds bbox
-	m_bounds.min = glm::vec3( 99999999.9, 99999999.9, 99999999.9 );
-	m_bounds.max = glm::vec3( -99999999.9, -99999999.9, -99999999.9 );
+	m_bounds.min = Vec3( 99999999.9, 99999999.9, 99999999.9 );
+	m_bounds.max = Vec3( -99999999.9, -99999999.9, -99999999.9 );
 
 	m_name = new char[ 512 ];
 	strcpy( m_name, msh_relative );
@@ -180,10 +182,10 @@ bool Mesh::LoadMSHFromFile( const char * msh_relative ) {
 				std::vector<Str> splitLine = line.Split( ' ' );
 				vert_t * currentVert = &( currentSurface->verts[currentVertIndex] );
 				currentVertIndex += 1;
-				currentVert->pos = glm::vec3( atof( splitLine[1].c_str() ), atof( splitLine[2].c_str() ), atof( splitLine[3].c_str() ) );
-				currentVert->norm = glm::vec3( atof( splitLine[4].c_str() ), atof( splitLine[5].c_str() ), atof( splitLine[6].c_str() ) );
-				currentVert->tang = glm::vec3();
-				currentVert->uv = glm::vec2( atof( splitLine[7].c_str() ), atof( splitLine[8].c_str() ) );
+				currentVert->pos = Vec3( atof( splitLine[1].c_str() ), atof( splitLine[2].c_str() ), atof( splitLine[3].c_str() ) );
+				currentVert->norm = Vec3( atof( splitLine[4].c_str() ), atof( splitLine[5].c_str() ), atof( splitLine[6].c_str() ) );
+				currentVert->tang = Vec3();
+				currentVert->uv = Vec2( atof( splitLine[7].c_str() ), atof( splitLine[8].c_str() ) );
 				std::vector< tri_t * > surfaceTris;
 				currentVert->tris = surfaceTris;
 
@@ -283,8 +285,8 @@ Mesh::LoadOBJFromFile
 */
 bool Mesh::LoadOBJFromFile( const char * obj_relative ) {
 	//init m_bounds bbox
-	m_bounds.min = glm::vec3( 99999999.9, 99999999.9, 99999999.9 );
-	m_bounds.max = glm::vec3( -99999999.9, -99999999.9, -99999999.9 );
+	m_bounds.min = Vec3( 99999999.9, 99999999.9, 99999999.9 );
+	m_bounds.max = Vec3( -99999999.9, -99999999.9, -99999999.9 );
 
 	m_name = new char[ 512 ];
 	strcpy( m_name, obj_relative );
@@ -300,13 +302,13 @@ bool Mesh::LoadOBJFromFile( const char * obj_relative ) {
 	
 	char buff[ 512 ] = { 0 };
 
-	std::vector< glm::vec3 > pointList;
-	std::vector< glm::vec2 > uvList;
-	std::vector< glm::vec3 > normalList;
+	std::vector< Vec3 > pointList;
+	std::vector< Vec2 > uvList;
+	std::vector< Vec3 > normalList;
 
-	glm::vec3 point;
-	glm::vec3 norm;
-	glm::vec2 uv;
+	Vec3 point;
+	Vec3 norm;
+	Vec2 uv;
 
 	while ( !feof( fp ) ) {
 		// Read whole line
@@ -314,7 +316,7 @@ bool Mesh::LoadOBJFromFile( const char * obj_relative ) {
 		
 		if ( sscanf_s( buff, "v %f %f %f", &point.x, &point.y, &point.z ) == 3 ) { //load vertex
 			// Add this point to the list of positions
-			glm::vec3 tempPos = glm::vec3( point.x, point.y, point.z );
+			Vec3 tempPos = Vec3( point.x, point.y, point.z );
 			pointList.push_back( tempPos );
 
 			//update m_bounds
@@ -339,12 +341,12 @@ bool Mesh::LoadOBJFromFile( const char * obj_relative ) {
 
 		} else if ( sscanf_s( buff, "vn %f %f %f", &norm.x, &norm.y, &norm.z ) == 3 ) { //load normal
 			// Add this norm to the list of normals
-			glm::vec3 tempNorm = glm::normalize( norm );
+			Vec3 tempNorm = norm.normal();
 			normalList.push_back( tempNorm );
 
 		} else if ( sscanf_s( buff, "vt %f %f", &uv.x, &uv.y ) == 2 ) { //load uv coord
 			// Add this texture coordinate to the list of texture coordinates
-			glm::vec2 tempUV = glm::vec2( uv.x, uv.y );
+			Vec2 tempUV = Vec2( uv.x, uv.y );
 			uvList.push_back( tempUV );
 
 		} else if ( buff[0] == 'f' ) { //load face
@@ -374,7 +376,7 @@ bool Mesh::LoadOBJFromFile( const char * obj_relative ) {
 					vert_t tempVert = {
 						pointList[m-1],	//position
 						normalList[o-1],//normal
-						glm::vec3(),	//tangent
+						Vec3(),	//tangent
 						uvList[n-1],	//uv
 						1.0f,			//tSign
 						triPtrList		//tris
@@ -408,7 +410,7 @@ bool Mesh::LoadOBJFromFile( const char * obj_relative ) {
 							const float rand_x = low_range + static_cast<float>( rand() ) / ( static_cast<float>( RAND_MAX / ( high_range - low_range ) ) );
 							const float rand_y = low_range + static_cast<float>( rand() ) / ( static_cast<float>( RAND_MAX / ( high_range - low_range ) ) );
 							const float rand_z = low_range + static_cast<float>( rand() ) / ( static_cast<float>( RAND_MAX / ( high_range - low_range ) ) );
-							glm::vec3 rand_offset = glm::vec3( rand_x, rand_y, rand_z );
+							Vec3 rand_offset = Vec3( rand_x, rand_y, rand_z );
 							tempVert.pos += rand_offset;
 							
 							//add new vert data to polygon and master list
@@ -537,9 +539,9 @@ bool twoVertsShared( tri_t * tri_a, tri_t * tri_b ) {
  ================================
  */
 float triangleUVSign( vert_t * m_surfaceVerts, tri_t * tri ) {
-	glm::vec2 t_a_1 = m_surfaceVerts[ tri->a ].uv;
-	glm::vec2 t_a_2 = m_surfaceVerts[ tri->b ].uv;
-	glm::vec2 t_a_3 = m_surfaceVerts[ tri->c ].uv;
+	Vec2 t_a_1 = m_surfaceVerts[ tri->a ].uv;
+	Vec2 t_a_2 = m_surfaceVerts[ tri->b ].uv;
+	Vec2 t_a_3 = m_surfaceVerts[ tri->c ].uv;
 	float sign = ( ( t_a_2.x - t_a_1.x ) * ( t_a_3.y - t_a_1.y ) ) - ( ( t_a_2.y - t_a_1.y ) * ( t_a_3.x - t_a_1.x ) );
 	return sign;
 }

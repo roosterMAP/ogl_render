@@ -130,14 +130,14 @@ void main() {
 	vec3 finalColor;
 
 	//sample texture value for current fragment
-	vec3 albedo = texture( albedoTexture, TexCoord ).rbg;
+	vec3 albedo = texture( albedoTexture, TexCoord ).rgb;
 	vec3 specular = texture( specularTexture, TexCoord ).rgb;
 	vec3 normal = texture( normalTexture, TexCoord ).rgb;
 	float roughness = 1.0 - texture( glossTexture, TexCoord ).r;
 
 	//gamma correct the albedo fragment
-	float gamma = 2.2;
-	albedo = pow( albedo, vec3( gamma ) );
+	//float gamma = 2.2;
+	//albedo = pow( albedo, vec3( gamma ) );
 
 	//transform the sampled normal into worldspace
 	normal = normalize( normal * 2.0 - 1.0 );
@@ -198,5 +198,6 @@ void main() {
 		}
 		finalColor = outgoingRadiance;
 	}
+
 	FragColor = vec4( finalColor, 1.0 );
 }

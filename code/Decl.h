@@ -1,16 +1,12 @@
 #pragma once
-#include <stdio.h>
+#ifndef __DECL_H_INCLUDE__
+#define __DECL_H_INCLUDE__
+
 #include <map>
-#include <vector>
-#include <string>
-#include <sstream>
-#include <iostream>
-#include <iterator>
-#include <fstream>
-#include <string>
 
 #include "Shader.h"
 #include "Texture.h"
+#include "String.h"
 
 //in the material decl, a texture entry is a uniform name pointing to a type and a relative path
 struct TextureSpecs {
@@ -64,3 +60,5 @@ class MaterialDecl : public Decl {
 				
 		static resourceMap_t s_matDecls;
 };
+
+#endif

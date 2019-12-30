@@ -1,26 +1,10 @@
-#include <string>
-#include <stdio.h>
-
 #include <GL/glew.h>
 #include <GL/freeglut.h>
-#include <glm.hpp>
-#include <gtc/matrix_transform.hpp>
-#include <gtc/type_ptr.hpp>
-
-#include <glm.hpp>
-#include <gtc/matrix_transform.hpp>
-#include <gtc/matrix_access.hpp>
-#include <gtc/type_ptr.hpp>
 
 #include "Scene.h"
-#include "Fileio.h"
-#include "Texture.h"
-#include "Camera.h"
-#include "Framebuffer.h"
 #include "PostProcess.h"
 #include "Command.h"
 #include "Console.h"
-#include "String.h"
 
 //Global storage of the window size
 int gScreenWidth  = 1200;
@@ -40,7 +24,7 @@ void keyOperations( void );
 void mouseButton( int button, int state, int x, int y );
 void mouseMovement( int x, int y );
 
-Camera camera( 45.0, glm::vec3( 0.0f, 0.0f, 0.0f ), glm::vec3( 1.0f, 0.0f, 0.0f ) );
+Camera camera( 45.0, Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 1.0f, 0.0f, 0.0f ) );
 Framebuffer mainFBO( "screenTexture" );
 PostProcessManager postProcessManager;
 const unsigned int MSAA_sampleCount = 0;
@@ -191,7 +175,7 @@ void RenderScene( const float * view, const float * projection ) {
 		debugRenderMode = atoi( g_cvar_debugLighting->GetArgs().c_str() );
 	}
 
-	if ( debugRenderMode != 6 ) {	
+	if ( debugRenderMode != 6 ) {
 		//render the scene
 		for ( int i = 0; i < g_scene->LightCount(); i++ ) {
 			Light * light = NULL;
@@ -247,7 +231,7 @@ void RenderScene( const float * view, const float * projection ) {
 					}
 
 					//pass camera position
-					matDecl->shader->SetUniform3f( "camPos", 1, glm::value_ptr( camera.position ) );
+					matDecl->shader->SetUniform3f( "camPos", 1, camera.m_position.as_ptr() );
 
 					//pass lights data
 					light->PassUniforms( matDecl->shader );
@@ -261,12 +245,12 @@ void RenderScene( const float * view, const float * projection ) {
 	}
 
 	//ambient pass
-	/*if ( debugRenderMode != 5 ) {		
+	if ( debugRenderMode != 5 ) {		
 		mainFBO.Bind();
 		if ( debugRenderMode == 6 ) {
-			glBlendFunc( GL_ONE, GL_ZERO );
+			glBlendFunc( GL_ONE, GL_ZERO ); //render spec probe only
 		} else {
-			glBlendFunc( GL_ONE, GL_ONE );
+			glBlendFunc( GL_ONE, GL_ONE ); //additivly blend spec probe
 		}
 
 		for ( int i = 0; i < g_scene->EnvProbeCount(); i++ ) {
@@ -286,14 +270,14 @@ void RenderScene( const float * view, const float * projection ) {
 					//pass in uniforms
 					probe->s_ambientPass_shader->SetUniformMatrix4f( "view", 1, false, view );		
 					probe->s_ambientPass_shader->SetUniformMatrix4f( "projection", 1, false, projection );
-					probe->s_ambientPass_shader->SetUniform3f( "camPos", 1, glm::value_ptr( camera.position ) );
+					probe->s_ambientPass_shader->SetUniform3f( "camPos", 1, camera.m_position.as_ptr() );
 	
 					//draw surface
 					mesh->DrawSurface( j );
 				}
 			}
 		}
-	}*/
+	}
 }
 
 /*
@@ -324,8 +308,8 @@ void drawFrame( void ) {
 	
 	const float aspect = ( float )gScreenWidth / ( float )gScreenHeight;
 
-	const glm::mat4 view = camera.viewMatrix();
-	const glm::mat4 projection = camera.projectionMatrix( aspect );
+	const Mat4 view = camera.viewMatrix();
+	const Mat4 projection = camera.projectionMatrix( aspect );
 
 	//get polygon rendermode from g_cvar_showEdgeHighlights.
 	//0 -> no highlights, 1 -> with highlights, 2 -> only highlights
@@ -344,17 +328,17 @@ void drawFrame( void ) {
 	}
 
 	if ( debugRenderMode > 0 && debugRenderMode <= 4 ) {		
-		RenderDebug( glm::value_ptr( view ), glm::value_ptr( projection ), debugRenderMode );
+		RenderDebug( view.as_ptr(), projection.as_ptr(), debugRenderMode );
 	} else {
 		if ( edgeHighlights_renderMode == 0 ) { //regular
-			RenderScene( glm::value_ptr( view ), glm::value_ptr( projection ) );
+			RenderScene( view.as_ptr(), projection.as_ptr() );
 		} else if ( edgeHighlights_renderMode == 1 ) { //wireframe overlayed
-			RenderScene( glm::value_ptr( view ), glm::value_ptr( projection ) );
-			const glm::vec3 edgeColor = glm::vec3( 1.0, 0.0, 0.0 );
-			RenderWireframe( glm::value_ptr( view ), glm::value_ptr( projection ), glm::value_ptr( edgeColor ), edgeHighlights_renderMode );
+			RenderScene( view.as_ptr(), projection.as_ptr() );
+			const Vec3 edgeColor = Vec3( 1.0, 0.0, 0.0 );
+			RenderWireframe( view.as_ptr(), projection.as_ptr(), edgeColor.as_ptr(), edgeHighlights_renderMode );
 		} else if ( edgeHighlights_renderMode == 2 ) { //wireframe only
-			const glm::vec3 edgeColor = glm::vec3( 1.0, 0.0, 0.0 );
-			RenderWireframe( glm::value_ptr( view ), glm::value_ptr( projection ), glm::value_ptr( edgeColor ), edgeHighlights_renderMode );
+			const Vec3 edgeColor = Vec3( 1.0, 0.0, 0.0 );
+			RenderWireframe( view.as_ptr(), projection.as_ptr(), edgeColor.as_ptr(), edgeHighlights_renderMode );
 		}
 	}
 
@@ -369,7 +353,7 @@ void drawFrame( void ) {
 			for ( int i = 0; i < g_scene->LightCount(); i++ ) {
 				Light * light = NULL;
 				g_scene->LightByIndex( i, &light );
-				light->DebugDraw( &camera, glm::value_ptr( view ), glm::value_ptr( projection ) );
+				light->DebugDraw( &camera, view.as_ptr(), projection.as_ptr() );
 			}
 		}
 	}
@@ -380,15 +364,16 @@ void drawFrame( void ) {
 		Cube sceneSkybox = g_scene->GetSkybox();
 		skyMat = MaterialDecl::GetMaterialDecl( sceneSkybox.m_surface->materialName.c_str() );
 		skyMat->BindTextures();
-		const glm::mat4 skyBox_viewMat = glm::mat4( glm::mat3( view ) );
-		skyMat->shader->SetUniformMatrix4f( "projection", 1, false, glm::value_ptr( projection ) );
-		skyMat->shader->SetUniformMatrix4f( "view", 1, false, glm::value_ptr( skyBox_viewMat ) );
+		Mat4 skyBox_viewMat = view;
+		skyBox_viewMat[3] = Vec4( 0.0f, 0.0f, 0.0f, 1.0f );
+		skyMat->shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
+		skyMat->shader->SetUniformMatrix4f( "view", 1, false, skyBox_viewMat.as_ptr() );
 		sceneSkybox.DrawSurface( true );
 	}
 
 	//if cvar is active, draw normal, tangent, and bitangent of all vertices in scene
 	if ( g_cvar_showVertTransform->GetState() ) {		
-		RenderVertexTransforms( glm::value_ptr( view ), glm::value_ptr( projection ) );
+		RenderVertexTransforms( view.as_ptr(), projection.as_ptr() );
 	}
 
 	//if cvar debug render mode on, skip post process pass
@@ -415,7 +400,7 @@ void drawFrame( void ) {
 			if ( g_scene->LightByIndex( debugLightRenderMode - 1, &light ) ) {
 				if ( light->m_shadowCaster ) {
 					//render the depth buffer to a quad on the screen
-					light->DrawDepthBuffer( glm::value_ptr( view ), glm::value_ptr( projection ) );
+					light->DrawDepthBuffer( view.as_ptr(), projection.as_ptr() );
 				}
 			} else {
 				g_console->AddError( "ERROR: There is no light at this index." );
@@ -458,7 +443,7 @@ bool glSetup( int argc, char ** argv ) {
 	} else {
 		glDisable(GL_MULTISAMPLE);
 		glutInitDisplayMode( GLUT_SINGLE | GLUT_RGB | GLUT_DEPTH ); //Tell GLUT to create a single display with Red Green Blue (RGB) color.
-		printf( "MSAA off" );
+		printf( "MSAA off\n" );
 	}
 	
 	glutInitWindowSize( gScreenWidth, gScreenHeight ); //Tell GLUT the size of the desired window
@@ -565,9 +550,9 @@ int main( int argc, char ** argv ) {
 	mainFBO.Unbind();
 
 	postProcessManager = PostProcessManager( gScreenWidth, gScreenHeight, "postProcess" );
-	postProcessManager.SetBlitParams( glm::vec2( 0.0, 0.0 ), glm::vec2( gScreenWidth, gScreenHeight ), glm::vec2( 0.0, 0.0 ), glm::vec2( gScreenWidth, gScreenHeight ) );
+	postProcessManager.SetBlitParams( Vec2( 0.0, 0.0 ), Vec2( gScreenWidth, gScreenHeight ), Vec2( 0.0, 0.0 ), Vec2( gScreenWidth, gScreenHeight ) );
 	//postProcessManager.BloomEnable( 0.5 );
-	postProcessManager.LUTEnable( "data\\texture\\LUT_default.tga" );
+	postProcessManager.LUTEnable( "data\\texture\\system\\LUT_default.tga" );
 
 	glutMainLoop(); //Do the infinite loop. This starts glut's inifinite loop.
 
@@ -656,30 +641,30 @@ void keyOperations() {
 		}
 	} else {
 		if ( keyStates[32] == true ) { //SPACE key
-			const glm::vec3 up = glm::vec3( 0.0, 1.0, 0.0 );
-			camera.position += up * camSpeed;
+			const Vec3 up = Vec3( 0.0, 1.0, 0.0 );
+			camera.m_position += up * camSpeed;
 		}
 
 		if ( keyStates['c'] == true || keyStates['C'] == true ) {
-			const glm::vec3 up = glm::vec3( 0.0, 1.0, 0.0 );
-			camera.position -= up * camSpeed;
+			const Vec3 up = Vec3( 0.0, 1.0, 0.0 );
+			camera.m_position -= up * camSpeed;
 		}
 
 		if ( keyStates['w'] == true || keyStates['W'] == true ) {
 			glutDestroyMenu( window );
-			camera.position += camera.look * camSpeed;
+			camera.m_position += camera.m_look * camSpeed;
 		}
 
 		if ( keyStates['a'] == true || keyStates['A'] == true ) {
-			camera.position += camera.right * camSpeed;
+			camera.m_position += camera.m_right * camSpeed;
 		}
 	
 		if ( keyStates['s'] == true || keyStates['S'] == true ) {
-			camera.position -= camera.look * camSpeed;
+			camera.m_position -= camera.m_look * camSpeed;
 		}
 	
 		if ( keyStates['d'] == true || keyStates['D'] == true ) {
-			camera.position -= camera.right * camSpeed;
+			camera.m_position -= camera.m_right * camSpeed;
 		}
 	}
 }
@@ -697,7 +682,7 @@ void mouseButton( int button, int state, int x, int y ) {
 		if ( g_console->GetState() ) {
 			g_console->OffsetLogHistory( true );
 		} else {
-			camera.fov -= 1.0f;
+			camera.m_fov -= 1.0f;
 		}
 	} else if ( button == 4 ) { //wheel DOWN
 		if ( state == GLUT_UP ) {
@@ -706,7 +691,7 @@ void mouseButton( int button, int state, int x, int y ) {
 		if ( g_console->GetState() ) {
 			g_console->OffsetLogHistory( false );
 		} else {
-			camera.fov += 1.0f;
+			camera.m_fov += 1.0f;
 		}
 	}
 }

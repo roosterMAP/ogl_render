@@ -1,10 +1,6 @@
 #include "Framebuffer.h"
 #include "Mesh.h"
 
-#include <glm.hpp>
-#include <gtc/matrix_transform.hpp>
-#include <gtc/matrix_access.hpp>
-#include <gtc/type_ptr.hpp>
 
 //vertex shader prog for debug light object
 const char * Framebuffer::s_vshader_source =

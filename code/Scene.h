@@ -1,7 +1,7 @@
-#include <vector>
-#include <string>
-
 #pragma once
+#ifndef __SCENE_H_INCLUDE__
+#define __SCENE_H_INCLUDE__
+
 #include "Light.h"
 
 /*
@@ -53,3 +53,5 @@ class Scene {
 		Light* m_lights [256];
 		EnvProbe* m_envProbes [256];
 };
+
+#endif

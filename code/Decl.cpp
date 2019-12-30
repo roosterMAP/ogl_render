@@ -1,6 +1,12 @@
 #include "Decl.h"
 #include "Fileio.h"
 
+//#include <stdio.h>
+//#include <sstream>
+//#include <iostream>
+//#include <iterator>
+//#include <fstream>
+
 //initialize static members
 resourceMap_t MaterialDecl::s_matDecls;
 std::vector< Texture* > Texture::s_textures;

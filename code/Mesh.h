@@ -1,14 +1,12 @@
 #pragma once
+#ifndef __MESH_H_INCLUDE__
+#define __MESH_H_INCLUDE__
+
 #include <vector>
 
-#include <glm.hpp>
-#include <gtc/matrix_transform.hpp>
-#include <gtc/type_ptr.hpp>
-
+#include "Vector.h"
+#include "Matrix.h"
 #include "Decl.h"
-#include "String.h"
-
-#include "mikktspace.h"
 
 struct tri_t {
 	unsigned int a;
@@ -17,10 +15,10 @@ struct tri_t {
 };
 
 struct vert_t {
-	glm::vec3 pos;
-	glm::vec3 norm;
-	glm::vec3 tang;
-	glm::vec2 uv;
+	Vec3 pos;
+	Vec3 norm;
+	Vec3 tang;
+	Vec2 uv;
 	float tSign;
 	std::vector< tri_t * > tris;
 };
@@ -35,8 +33,8 @@ struct surface {
 };
 
 struct bbox {
-	glm::vec3 min;
-	glm::vec3 max;
+	Vec3 min;
+	Vec3 max;
 };
 
 /*
@@ -49,16 +47,16 @@ class Transform {
 		Transform() {};
 		~Transform() {};
 
-		void SetPosition( glm::vec3 pos ) { m_position = pos; }
-		void SetRotation( glm::mat3x3 rot ) { m_rotation = rot; }
-		void SetScale( glm::vec3 scl ) { m_scale = scl; }
-		bool WorldXfrm( glm::mat4x4* model );
+		void SetPosition( Vec3 pos ) { m_position = pos; }
+		void SetRotation( Mat3 rot ) { m_rotation = rot; }
+		void SetScale( Vec3 scl ) { m_scale = scl; }
+		bool WorldXfrm( Mat4* model );
 
 	private:
-		glm::vec3 m_position;
-		glm::mat3x3 m_rotation;
-		glm::vec3 m_scale;
-		glm::mat4x4 m_xfrm;
+		Vec3 m_position;
+		Mat3 m_rotation;
+		Vec3 m_scale;
+		Mat4 m_xfrm;
 };
 
 /*
@@ -110,3 +108,5 @@ class Cube {
 	private:
 		unsigned int LoadVAO();
 };
+
+#endif

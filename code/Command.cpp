@@ -1,14 +1,11 @@
+#pragma once
+
 #include "Command.h"
 #include "Console.h"
-#include "Fileio.h"
-#include "Texture.h"
-#include "Framebuffer.h"
-#include "Mesh.h"
 #include "Scene.h"
 
 #include <assert.h>
 #include <GL/freeglut.h>
-#define PI 3.14159265358979323846
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image.h"
@@ -177,9 +174,9 @@ void Fn_EquirectangularToCubeMap( Str args ) {
 
 	//read data from image file
 	int width, height, nrChannels;
-	const glm::vec3 x_axis = glm::vec3( 1.0, 0.0, 0.0 );
-	const glm::vec3 y_axis = glm::vec3( 0.0, 1.0, 0.0 );
-	const glm::vec3 z_axis = glm::vec3( 0.0, 0.0, 1.0 );
+	const Vec3 x_axis = Vec3( 1.0, 0.0, 0.0 );
+	const Vec3 y_axis = Vec3( 0.0, 1.0, 0.0 );
+	const Vec3 z_axis = Vec3( 0.0, 0.0, 1.0 );
 
 	if ( equImg_absolute.EndsWith( ".tga" ) ) {
 		unsigned char *data = stbi_load( equImg_absolute.c_str(), &width, &height, &nrChannels, 0 );
@@ -193,26 +190,27 @@ void Fn_EquirectangularToCubeMap( Str args ) {
 				for ( int j = 0; j < cubemapSize * 6; j++ ) {
 					const int k = j % cubemapSize;
 				
-					glm::vec3 sampleVec;
+					Vec3 sampleVec;
 					if ( j < cubemapSize ) { //front
-						sampleVec = ( z_axis * -halfSize ) + ( glm::vec3( k, i, 0 ) - glm::vec3( halfSize, halfSize, 0.0 ) );
+						sampleVec = ( z_axis * -halfSize ) + ( Vec3( k, i, 0 ) - Vec3( halfSize, halfSize, 0.0 ) );
 					} else if ( j < cubemapSize * 2 ) { //back
-						sampleVec = ( z_axis * halfSize ) + ( glm::vec3( abs( cubemapSize - k ), i, 0 ) - glm::vec3( halfSize, halfSize, 0.0 ) );
+						sampleVec = ( z_axis * halfSize ) + ( Vec3( abs( cubemapSize - k ), i, 0 ) - Vec3( halfSize, halfSize, 0.0 ) );
 					} else if ( j < cubemapSize * 3 ) { //up
-						sampleVec = ( y_axis * -halfSize ) + ( glm::vec3( abs( cubemapSize - i ), 0, abs( cubemapSize - k ) ) - glm::vec3( halfSize, 0.0, halfSize ) );
+						sampleVec = ( y_axis * -halfSize ) + ( Vec3( abs( cubemapSize - i ), 0, abs( cubemapSize - k ) ) - Vec3( halfSize, 0.0, halfSize ) );
 					} else if ( j < cubemapSize * 4 ) { //down
-						sampleVec = ( y_axis * halfSize ) + ( glm::vec3( i, 0, abs( cubemapSize - k ) ) - glm::vec3( halfSize, 0.0, halfSize ) );
+						sampleVec = ( y_axis * halfSize ) + ( Vec3( i, 0, abs( cubemapSize - k ) ) - Vec3( halfSize, 0.0, halfSize ) );
 					} else if ( j < cubemapSize * 5 ) { //right
-						sampleVec = ( x_axis * -halfSize ) + ( glm::vec3( 0, i, abs( cubemapSize - k ) ) - glm::vec3( 0.0, halfSize, halfSize ) );
+						sampleVec = ( x_axis * -halfSize ) + ( Vec3( 0, i, abs( cubemapSize - k ) ) - Vec3( 0.0, halfSize, halfSize ) );
 					} else if ( j < cubemapSize * 6 ) { //left
-						sampleVec = ( x_axis * halfSize ) + ( glm::vec3( 0, i, k ) - glm::vec3( 0.0, halfSize, halfSize ) );
+						sampleVec = ( x_axis * halfSize ) + ( Vec3( 0, i, k ) - Vec3( 0.0, halfSize, halfSize ) );
 					}
-					sampleVec = glm::normalize( sampleVec );
+					sampleVec.normalize();
 
 					//convert to uv coords of spherical map
-					const glm::vec2 invAtan = glm::vec2( 0.1591, 0.3183 );
-					glm::vec2 uv = glm::vec2( atan2( sampleVec.z, sampleVec.x ), asin( sampleVec.y ) );
-					uv *= invAtan;
+					const Vec2 invAtan = Vec2( 0.1591, 0.3183 );
+					Vec2 uv = Vec2( atan2( sampleVec.z, sampleVec.x ), asin( sampleVec.y ) );
+					uv[0] *= invAtan[0];
+					uv[1] *= invAtan[1];
 					uv += 0.5;
 
 					//write to output
@@ -249,26 +247,27 @@ void Fn_EquirectangularToCubeMap( Str args ) {
 				for ( int j = 0; j < cubemapSize * 6; j++ ) {
 					const int k = j % cubemapSize;
 				
-					glm::vec3 sampleVec;
+					Vec3 sampleVec;
 					if ( j < cubemapSize ) { //front
-						sampleVec = ( z_axis * -halfSize ) + ( glm::vec3( k, i, 0 ) - glm::vec3( halfSize, halfSize, 0.0 ) );
+						sampleVec = ( z_axis * -halfSize ) + ( Vec3( k, i, 0 ) - Vec3( halfSize, halfSize, 0.0 ) );
 					} else if ( j < cubemapSize * 2 ) { //back
-						sampleVec = ( z_axis * halfSize ) + ( glm::vec3( abs( cubemapSize - k ), i, 0 ) - glm::vec3( halfSize, halfSize, 0.0 ) );
+						sampleVec = ( z_axis * halfSize ) + ( Vec3( abs( cubemapSize - k ), i, 0 ) - Vec3( halfSize, halfSize, 0.0 ) );
 					} else if ( j < cubemapSize * 3 ) { //up
-						sampleVec = ( y_axis * -halfSize ) + ( glm::vec3( abs( cubemapSize - i ), 0, abs( cubemapSize - k ) ) - glm::vec3( halfSize, 0.0, halfSize ) );
+						sampleVec = ( y_axis * -halfSize ) + ( Vec3( abs( cubemapSize - i ), 0, abs( cubemapSize - k ) ) - Vec3( halfSize, 0.0, halfSize ) );
 					} else if ( j < cubemapSize * 4 ) { //down
-						sampleVec = ( y_axis * halfSize ) + ( glm::vec3( i, 0, abs( cubemapSize - k ) ) - glm::vec3( halfSize, 0.0, halfSize ) );
+						sampleVec = ( y_axis * halfSize ) + ( Vec3( i, 0, abs( cubemapSize - k ) ) - Vec3( halfSize, 0.0, halfSize ) );
 					} else if ( j < cubemapSize * 5 ) { //right
-						sampleVec = ( x_axis * -halfSize ) + ( glm::vec3( 0, i, abs( cubemapSize - k ) ) - glm::vec3( 0.0, halfSize, halfSize ) );
+						sampleVec = ( x_axis * -halfSize ) + ( Vec3( 0, i, abs( cubemapSize - k ) ) - Vec3( 0.0, halfSize, halfSize ) );
 					} else if ( j < cubemapSize * 6 ) { //left
-						sampleVec = ( x_axis * halfSize ) + ( glm::vec3( 0, i, k ) - glm::vec3( 0.0, halfSize, halfSize ) );
+						sampleVec = ( x_axis * halfSize ) + ( Vec3( 0, i, k ) - Vec3( 0.0, halfSize, halfSize ) );
 					}
-					sampleVec = glm::normalize( sampleVec );
+					sampleVec.normalize();
 
 					//convert to uv coords of spherical map
-					const glm::vec2 invAtan = glm::vec2( 0.1591, 0.3183 );
-					glm::vec2 uv = glm::vec2( atan2( sampleVec.z, sampleVec.x ), asin( sampleVec.y ) );
-					uv *= invAtan;
+					const Vec2 invAtan = Vec2( 0.1591, 0.3183 );
+					Vec2 uv = Vec2( atan2( sampleVec.z, sampleVec.x ), asin( sampleVec.y ) );
+					uv[0] *= invAtan[0];
+					uv[1] *= invAtan[1];
 					uv += 0.5;
 
 					//write to output
@@ -345,23 +344,23 @@ void Fn_ComputeIrradianceMap( Str args ) {
 		shaderProg = shaderProg->GetShader( "irradiance_convolution" );
 		shaderProg->UseProgram();
 		shaderProg->SetAndBindUniformTexture( "environmentMap", 0, cubemapTexture.GetTarget(), cubemapTexture.GetName() );
-		glm::mat4 projection = glm::perspective( glm::radians( 90.0f ), 1.0f, 0.1f, 10.0f );
-		shaderProg->SetUniformMatrix4f( "projection", 1, false, glm::value_ptr( projection ) );
-		glm::mat4 views[] = {
-			glm::lookAt( glm::vec3( 0.0f, 0.0f, 0.0f ), glm::vec3( 1.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ) ),
-			glm::lookAt( glm::vec3( 0.0f, 0.0f, 0.0f ), glm::vec3( -1.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ) ),
-			glm::lookAt( glm::vec3( 0.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, 1.0f, 0.0f ), glm::vec3( 0.0f, 0.0f, 1.0f ) ),
-			glm::lookAt( glm::vec3( 0.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ), glm::vec3( 0.0f, 0.0f, -1.0f ) ),
-			glm::lookAt( glm::vec3( 0.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, 0.0f, 1.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ) ),
-			glm::lookAt( glm::vec3( 0.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, 0.0f, -1.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ) )
-		};
+		Mat4 projection = Mat4();
+		projection.Perspective( to_radians( 90.0f ), 1.0f, 0.1f, 10.0f );
+		shaderProg->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
+		Mat4 views[] = { Mat4(), Mat4(), Mat4(), Mat4(), Mat4(), Mat4() };
+		views[0].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+		views[1].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( -1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+		views[2].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, 1.0f, 0.0f ), Vec3( 0.0f, 0.0f, 1.0f ) );
+		views[3].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ), Vec3( 0.0f, 0.0f, -1.0f ) );
+		views[4].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, 0.0f, 1.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+		views[5].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, 0.0f, -1.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
 
 		//draw to irradianceFBO	by convoluting each face of the environment cubemap
 		glViewport( 0, 0, height, height );
 		irradianceFBO.Bind();
 		Cube renderBox = Cube( "" );
 		for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
-			shaderProg->SetUniformMatrix4f( "view", 1, false, glm::value_ptr( views[faceIdx] ) );
+			shaderProg->SetUniformMatrix4f( "view", 1, false, views[faceIdx].as_ptr() );
 			glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + faceIdx, irradianceFBO.m_attachements[0], 0 );
 			glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 			renderBox.DrawSurface( true );
@@ -392,7 +391,7 @@ void Fn_ComputeIrradianceMap( Str args ) {
 
 		//generate output image path
 		Str irradianceMap_absolute = cubeMap_absolute.Substring( 0, cubeMap_absolute.Length() - 4 );
-		irradianceMap_absolute += "_irradiance.hdr";
+		irradianceMap_absolute += "_irr.hdr";
 		stbi_write_hdr( irradianceMap_absolute.c_str(), width, height, chanCount, output_data ); //save image
 		delete[] cubemapFace_data;
 		delete[] output_data;
@@ -422,13 +421,10 @@ void Fn_BuildScene( Str args ) {
 	const unsigned int chanCount = 3;
 	const unsigned int cubemapSize = 128;
 	for ( unsigned int i = 0; i < scene->EnvProbeCount(); i++ ) {
+		//create probe img filename
 		char idx_str[5];
 		itoa( ( int )i, idx_str, 10 );
 		Str probe_suffix = Str( idx_str );
-
-		EnvProbe * probe = NULL;
-		scene->EnvProbeByIndex( i, &probe );
-		unsigned int envCubemapTextureID = probe->RenderCubemaps( cubemapSize );
 
 		Str environment_relativePath = Str( probeName.c_str() );
 		if ( dirExists( environment_relativePath.c_str() ) == false ) {
@@ -437,14 +433,20 @@ void Fn_BuildScene( Str args ) {
 		environment_relativePath.Append( "\\env_" );
 		environment_relativePath.Append( probe_suffix );
 		environment_relativePath.Append( ".hdr" );
+		
+		//render the probe
+		EnvProbe * probe = NULL;
+		scene->EnvProbeByIndex( i, &probe );
+		std::vector< unsigned int > envCubemapTextureIDs = probe->RenderCubemaps( cubemapSize );
 
-		//copy irradiance texture data from gpu to cpu
+		//copy env texture data from gpu to cpu
 		float * output_data = new float[ cubemapSize * 6 * cubemapSize * chanCount ];
 		float * cubemapFace_data = new float[ cubemapSize * 6 * cubemapSize * chanCount ];
 		for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
 			//copy from gpu to cubemapFace_data
-			glBindTexture( GL_TEXTURE_CUBE_MAP, envCubemapTextureID );
-			glGetTexImage( GL_TEXTURE_CUBE_MAP_POSITIVE_X + faceIdx, 0, GL_RGB,  GL_FLOAT, cubemapFace_data );
+			const unsigned int textureID = envCubemapTextureIDs[faceIdx];
+			glBindTexture( GL_TEXTURE_2D, textureID );
+			glGetTexImage( GL_TEXTURE_2D, 0, GL_RGB,  GL_FLOAT, cubemapFace_data );
 
 			//write from cubemapFace_data to output_data
 			for ( int i = 0; i < cubemapSize; i++ ) {

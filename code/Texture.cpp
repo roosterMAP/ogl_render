@@ -1,12 +1,7 @@
 ﻿#include "Texture.h"
 #include "Fileio.h"
 #include "Framebuffer.h"
-#include "mesh.h"
-
-#include <glm.hpp>
-#include <gtc/matrix_transform.hpp>
-#include <gtc/matrix_access.hpp>
-#include <gtc/type_ptr.hpp>
+#include "Mesh.h"
 
 #pragma once
 #define STB_IMAGE_IMPLEMENTATION
@@ -219,6 +214,10 @@ bool CubemapTexture::InitFromFile( const char * relativePath ) {
 	}	
 
 	if ( ldr_data || hdr_data ) {
+		if (width < 0 || height < 0) {
+			printf( "Failed to load texture: %s\n", relativePath );
+			return false;
+		}
 		if ( height * 6 != width ) {
 			printf( "Failed to load texture: %s\n\tIncorrect dimensions!!!\n", relativePath );
 			return false;
@@ -303,19 +302,19 @@ void CubemapTexture::PrefilterSpeculateProbe() {
 	shaderProg = shaderProg->GetShader( "prefilter_envMap" );
 	shaderProg->UseProgram();
 	shaderProg->SetAndBindUniformTexture( "environmentMap", 0, GL_TEXTURE_CUBE_MAP, mName );
-	glm::mat4 projection = glm::perspective( glm::radians( 90.0f ), 1.0f, 0.1f, 10.0f );
-	shaderProg->SetUniformMatrix4f( "projection", 1, false, glm::value_ptr( projection ) );
+	Mat4 projection = Mat4();
+	projection.Perspective( to_radians( 90.0f ), 1.0f, 0.1f, 10.0f );
+	shaderProg->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
 
 	//create cube geo and views to render cubemap to
 	Cube renderBox = Cube( "" );
-	glm::mat4 views[] = {
-		glm::lookAt( glm::vec3( 0.0f, 0.0f, 0.0f ), glm::vec3( 1.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ) ),
-		glm::lookAt( glm::vec3( 0.0f, 0.0f, 0.0f ), glm::vec3( -1.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ) ),
-		glm::lookAt( glm::vec3( 0.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, 1.0f, 0.0f ), glm::vec3( 0.0f, 0.0f, 1.0f ) ),
-		glm::lookAt( glm::vec3( 0.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ), glm::vec3( 0.0f, 0.0f, -1.0f ) ),
-		glm::lookAt( glm::vec3( 0.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, 0.0f, 1.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ) ),
-		glm::lookAt( glm::vec3( 0.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, 0.0f, -1.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ) )
-	};
+	Mat4 views[] = { Mat4(), Mat4(), Mat4(), Mat4(), Mat4(), Mat4() };
+	views[0].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+	views[1].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( -1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+	views[2].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, 1.0f, 0.0f ), Vec3( 0.0f, 0.0f, 1.0f ) );
+	views[3].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ), Vec3( 0.0f, 0.0f, -1.0f ) );
+	views[4].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, 0.0f, 1.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+	views[5].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, 0.0f, -1.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
 
 	//draw to prefilterFBO by convoluting each face of env cubemap for each mip level
 	prefilterFBO.Bind();
@@ -328,7 +327,7 @@ void CubemapTexture::PrefilterSpeculateProbe() {
 		shaderProg->SetUniform1f( "roughness", 1, &roughness );
 
 		for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
-			shaderProg->SetUniformMatrix4f( "view", 1, false, glm::value_ptr( views[faceIdx] ) );
+			shaderProg->SetUniformMatrix4f( "view", 1, false, views[faceIdx].as_ptr() );
 			glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + faceIdx, prefilterFBO.m_attachements[0], mip );
 			glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 			renderBox.DrawSurface( true );

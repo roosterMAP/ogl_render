@@ -1,5 +1,7 @@
 #pragma once
-#include <vector>
+#ifndef __COMMAND_H_INCLUDE__
+#define __COMMAND_H_INCLUDE__
+
 #include "String.h"
 
 class CommandSys;
@@ -71,3 +73,5 @@ class CVar {
 		bool m_state;
 		Str m_args;
 };
+
+#endif

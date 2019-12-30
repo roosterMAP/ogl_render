@@ -1,13 +1,18 @@
 #pragma once
+#ifndef __CONSOLE_H_INCLUDE__
+#define __CONSOLE_H_INCLUDE__
+
 #include "Shader.h"
 #include "String.h"
-
-#include <glm.hpp>
-#include <gtc/matrix_transform.hpp>
-#include <gtc/type_ptr.hpp>
+#include "Vector.h"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
+
+struct IVec {
+	signed int x;
+	signed int y;
+};
 
 /*
 ==============================
@@ -17,8 +22,8 @@ Character
 */
 struct Character {
     GLuint TextureID;		// ID handle of the glyph texture
-    glm::ivec2 Size;		// Size of glyph
-    glm::ivec2 Bearing;		// Offset from baseline to left/top of glyph
+    IVec Size;				// Size of glyph
+    IVec Bearing;			// Offset from baseline to left/top of glyph
     GLuint Advance;			// Offset to advance to next glyph
 };
 
@@ -32,7 +37,7 @@ Entry
 */
 struct Entry {
 	unsigned int type;
-	glm::vec3 color;
+	Vec3 color;
     Str string;
 };
 
@@ -106,3 +111,5 @@ class Console {
 		static const char * s_background_vshader_source;
 		static const char * s_background_fshader_source;
 };
+
+#endif

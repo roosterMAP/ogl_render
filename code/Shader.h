@@ -1,4 +1,7 @@
 #pragma once
+#ifndef __SHADER_H_INCLUDE__
+#define __SHADER_H_INCLUDE__
+
 #include <stdio.h>
 #include <map>
 #include <vector>
@@ -62,3 +65,5 @@ private:
 
 	static resourceMap_s s_shaders;
 };
+
+#endif

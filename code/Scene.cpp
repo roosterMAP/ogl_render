@@ -1,10 +1,6 @@
 #include "Scene.h"
 #include "Fileio.h"
 
-#include <glm.hpp>
-#include <gtc/matrix_transform.hpp>
-#include <gtc/type_ptr.hpp>
-
 /*
 ================================
 Console::getInstance
@@ -113,8 +109,8 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 
 	int intVal;
 	float val1;
-	glm::vec3 val3;
-	glm::mat3x3 val9;
+	Vec3 val3;
+	Mat3 val9;
 
 	while ( !feof( fp ) ) {
 		// Read whole line
@@ -124,22 +120,22 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 			if ( strncmp( buff, "}", 1 ) == 0 ) {
 				loadingMeshEntity = false;
 			} else if ( sscanf_s( buff, "\tpos %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) {
-				currentTransform->SetPosition( glm::vec3( val3 ) );
+				currentTransform->SetPosition( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\trot %f %f %f %f %f %f %f %f %f", &val9[0][0], &val9[0][1], &val9[0][2], &val9[1][0], &val9[1][1], &val9[1][2], &val9[2][0], &val9[2][1], &val9[2][2] ) == 9 ) {
-				currentTransform->SetRotation( glm::mat3x3( val9 ) );
+				currentTransform->SetRotation( Mat3( val9 ) );
 			} else if ( sscanf_s( buff, "\tscl %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) {
-				currentTransform->SetScale( glm::vec3( val3 ) );
+				currentTransform->SetScale( Vec3( val3 ) );
 			}
 		} else if ( loadingSpotLightEntity ) { //load spotlight data
 			if ( strncmp( buff, "}", 1 ) == 0 ) {
 				loadingSpotLightEntity = false;
 			} else if ( sscanf_s( buff, "\tcol %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //color
-				currentLight->SetColor( glm::vec3( val3 ) );
+				currentLight->SetColor( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tpos %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //position
-				currentLight->SetPosition( glm::vec3( val3 ) );
+				currentLight->SetPosition( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tdir %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //direction
 				SpotLight* tempSpotLight = ( SpotLight* )currentLight;
-				tempSpotLight->SetDirection( glm::vec3( val3 ) );
+				tempSpotLight->SetDirection( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tang %f", &val1 ) == 1 ) { //inner angle
 				SpotLight* tempSpotLight = ( SpotLight* )currentLight;
 				tempSpotLight->SetAngle( val1 );
@@ -155,12 +151,12 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 			if ( strncmp( buff, "}", 1 ) == 0 ) {
 				loadingDirectionalLightEntity = false;
 			} else if ( sscanf_s( buff, "\tcol %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //color
-				currentLight->SetColor( glm::vec3( val3 ) );
+				currentLight->SetColor( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tpos %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //position
-				currentLight->SetPosition( glm::vec3( val3 ) );
+				currentLight->SetPosition( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tdir %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //direction
 				DirectionalLight* tempDirectionalLight = ( DirectionalLight* )currentLight;
-				tempDirectionalLight->SetDirection( glm::vec3( val3 ) );
+				tempDirectionalLight->SetDirection( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tsha %d", &intVal ) == 1 ) { //shadow
 				if ( intVal == 1 ) {
 					currentLight->EnableShadows();
@@ -170,9 +166,9 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 			if ( strncmp( buff, "}", 1 ) == 0 ) {
 				loadingPointLightEntity = false;
 			} else if ( sscanf_s( buff, "\tcol %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //color
-				currentLight->SetColor( glm::vec3( val3 ) );
+				currentLight->SetColor( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tpos %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //position
-				currentLight->SetPosition( glm::vec3( val3 ) );
+				currentLight->SetPosition( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tsiz %f", &val1 ) == 1 ) { //radius
 				PointLight* tempPointLight = ( PointLight* )currentLight;
 				tempPointLight->SetRadius( val1 );
@@ -185,13 +181,13 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 			if ( strncmp( buff, "}", 1 ) == 0 ) {
 				loadingAmbientLightEntity = false;
 			} else if ( sscanf_s( buff, "\tcol %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //color
-				currentLight->SetColor( glm::vec3( val3 ) );
+				currentLight->SetColor( Vec3( val3 ) );
 			}
 		} else if ( loadingEnvProbeEntity ) { //load environment probe data
 			if ( strncmp( buff, "}", 1 ) == 0 ) {
 				loadingEnvProbeEntity = false;
 			} else if ( sscanf_s( buff, "\tpos %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //position
-				currentEnvProbe->SetPosition( glm::vec3( val3 ) );
+				currentEnvProbe->SetPosition( Vec3( val3 ) );
 			}
 		}
 
@@ -280,11 +276,11 @@ void Scene::LoadVAOs() {
 
 		//build list of transforms for each instance
 		const unsigned int instanceCount = currentMesh->m_transforms.size();
-		glm::mat4* instanceXfrms;
-		instanceXfrms = new glm::mat4[instanceCount];
+		Mat4* instanceXfrms;
+		instanceXfrms = new Mat4[instanceCount];
 		for ( unsigned int j = 0; j < instanceCount; j++ ) {
 			Transform * currentTransform = currentMesh->m_transforms[j];
-			glm::mat4 newXfrm;
+			Mat4 newXfrm;
 			currentTransform->WorldXfrm( &newXfrm );
 			instanceXfrms[j] = newXfrm;
 		}
@@ -327,17 +323,17 @@ void Scene::LoadVAOs() {
 			unsigned int transfomrBuffer;
 			glGenBuffers( 1, &transfomrBuffer );
 			glBindBuffer( GL_ARRAY_BUFFER, transfomrBuffer );
-			glBufferData( GL_ARRAY_BUFFER, instanceCount * sizeof( glm::mat4 ), &instanceXfrms[0], GL_STATIC_DRAW );
+			glBufferData( GL_ARRAY_BUFFER, instanceCount * sizeof( Mat4 ), &instanceXfrms[0], GL_STATIC_DRAW );
 
 			//set transformation matrices as an instance vertex attribute for the currently bound VAO
 			glEnableVertexAttribArray( 5 );
-			glVertexAttribPointer( 5, 4, GL_FLOAT, GL_FALSE, sizeof( glm::mat4 ), ( void* )0 );
+			glVertexAttribPointer( 5, 4, GL_FLOAT, GL_FALSE, sizeof( Mat4 ), ( void* )0 );
 			glEnableVertexAttribArray( 6 );
-			glVertexAttribPointer( 6, 4, GL_FLOAT, GL_FALSE, sizeof( glm::mat4 ), ( void* )( sizeof( glm::vec4 ) ) );
+			glVertexAttribPointer( 6, 4, GL_FLOAT, GL_FALSE, sizeof( Mat4 ), ( void* )( sizeof( Vec4 ) ) );
 			glEnableVertexAttribArray( 7 );
-			glVertexAttribPointer( 7, 4, GL_FLOAT, GL_FALSE, sizeof( glm::mat4 ), ( void* )( 2 * sizeof( glm::vec4 ) ) );
+			glVertexAttribPointer( 7, 4, GL_FLOAT, GL_FALSE, sizeof( Mat4 ), ( void* )( 2 * sizeof( Vec4 ) ) );
 			glEnableVertexAttribArray( 8 );
-			glVertexAttribPointer( 8, 4, GL_FLOAT, GL_FALSE, sizeof( glm::mat4 ), ( void* )( 3 * sizeof( glm::vec4 ) ) );
+			glVertexAttribPointer( 8, 4, GL_FLOAT, GL_FALSE, sizeof( Mat4 ), ( void* )( 3 * sizeof( Vec4 ) ) );
 
 			//use divisor 1 cuz we want to update the content of the vertex attribute when we start to render a new instance
 			glVertexAttribDivisor( 5, 1 );
@@ -372,13 +368,13 @@ void Scene::BuildProbes() {
 		Mesh * mesh = m_meshes[i];
 
 		const bbox meshBounds = mesh->GetBounds();
-		const glm::vec3 meshCenter = ( meshBounds.min + meshBounds.max ) / 2.0f;
+		const Vec3 meshCenter = ( meshBounds.min + meshBounds.max ) / 2.0f;
 
 		unsigned int nearestProbeIdx = 0;
 		float minDist = 99999999.0;
 		for ( unsigned int j = nearestProbeIdx; j < m_envProbeCount; j++ ) {
 			EnvProbe * probe = m_envProbes[j];
-			const float dist = glm::length( meshCenter - probe->GetPosition() );
+			const float dist = ( meshCenter - probe->GetPosition() ).length();
 			if ( dist < minDist ) {
 				minDist = dist;
 				nearestProbeIdx = j;
@@ -388,7 +384,7 @@ void Scene::BuildProbes() {
 		nearestProbe->AddMesh( mesh );
 	}
 
-	//call EnvProbe::BuildProbe function.
+	//call EnvProbe::BuildProbe function which fetches env and irradiance cubemap images and generates specular mips.
 	for ( unsigned int i = 0; i < m_envProbeCount; i++ ) {
 		EnvProbe * probe = m_envProbes[i];
 		probe->BuildProbe( i );

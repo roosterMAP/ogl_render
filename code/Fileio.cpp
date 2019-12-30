@@ -5,6 +5,12 @@
 
 #include "Fileio.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <string.h>
+#include <windows.h>
+
 
 #ifdef WINDOWS
 #include <direct.h>

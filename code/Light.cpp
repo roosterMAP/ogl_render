@@ -53,12 +53,13 @@ Light::Light
 ================================
 */
 Light::Light() {
-	m_position = glm::vec3( 0.0 );
-	m_color = glm::vec3( 1.0 );
+	m_position = Vec3( 0.0 );
+	m_color = Vec3( 1.0 );
 	m_shadowCaster = false;
 	m_near_plane = 0.1f;
 	m_far_plane = 7.5f;
 	m_depthBuffer = Framebuffer( "depthMap" );
+	m_xfrm = Mat4();
 
 	if ( s_blankShadowMap == 0 ) {
 		s_blankShadowMap = CreateBlankShadowMapTexture( 512, 512 );
@@ -71,9 +72,9 @@ Light::Light() {
 Light::Light
 ================================
 */
-Light::Light( glm::vec3 pos ) {
+Light::Light( Vec3 pos ) {
 	m_position = pos;
-	m_color = glm::vec3( 1.0 );
+	m_color = Vec3( 1.0 );
 	m_shadowCaster = false;
 	m_near_plane = 0.1f;
 	m_far_plane = 7.5f;
@@ -163,7 +164,7 @@ void Light::DebugDrawSetup( std::string obj ) {
 		return;
 	}
 	m_debugShader->UseProgram();
-	m_debugShader->SetUniform3f( "color", 1, glm::value_ptr( m_color ) );
+	m_debugShader->SetUniform3f( "color", 1, m_color.as_ptr() );
 	
 	//load light mesh
 	if ( !m_mesh.LoadOBJFromFile( obj.c_str() ) ) {
@@ -195,17 +196,22 @@ void Light::DebugDraw( Camera * camera, const float * view, const float * projec
 		m_debugShader->UseProgram();
 
 		//calculate model matrix
-		glm::mat4 translation = glm::translate( glm::mat4( 1.0f ), m_position );
+		Mat4 translation = Mat4();
+		translation.Translate( m_position );
 
-		glm::vec3 camToLight = ( camera->position - m_position );
-		float dist = glm::length( camToLight ) * 0.05f;		
-		glm::mat4 scale = glm::scale( glm::mat4( 1.0f ), glm::vec3( dist ) );
+		Vec3 camToLight = ( camera->m_position - m_position );
+		float dist = camToLight.length() * 0.05f;
 
-		glm::mat4 model = translation * scale;
+		Mat4 scale = Mat4();
+		for ( int i = 0; i < 3; i++ ) {
+			scale[i][i] = dist;
+		}
+
+		Mat4 model = translation * scale;
 
 		//pass uniforms to shader
 		m_debugShader->SetUniformMatrix4f( "view", 1, false, view );
-		m_debugShader->SetUniformMatrix4f( "model", 1, false, glm::value_ptr( model ) );
+		m_debugShader->SetUniformMatrix4f( "model", 1, false, model.as_ptr() );
 		m_debugShader->SetUniformMatrix4f( "projection", 1, false, projection );		
 		
 		//render debug light model
@@ -232,8 +238,8 @@ Light::PassUniforms
 void Light::PassUniforms( Shader * shader ) {
 	const int typeIndex = 0;
 	shader->SetUniform1i( "light.typeIndex", 1, &typeIndex );
-	shader->SetUniform3f( "light.position", 1, glm::value_ptr( m_position ) );
-	shader->SetUniform3f( "light.color", 1, glm::value_ptr( m_color ) );
+	shader->SetUniform3f( "light.position", 1, m_position.as_ptr() );
+	shader->SetUniform3f( "light.color", 1, m_color.as_ptr() );
 	const int shadow = 0;
 	shader->SetUniform1i( "light.shadow", 1, &shadow );
 }
@@ -295,21 +301,23 @@ DirectionalLight::LightMatrix
 ================================
 */
 const float * DirectionalLight::LightMatrix() {
-	glm::mat4 lightProjection = glm::ortho( -1.0f, 1.0f, -1.0f, 1.0f, m_near_plane, m_far_plane );
+	Mat4 lightProjection = Mat4();
+	lightProjection.Orthographic( -1.0f, 1.0f, -1.0f, 1.0f, m_near_plane, m_far_plane );
 
-	glm::vec3 up = glm::vec3( 0.0f, 1.0f, 0.0f );
-	glm::vec3 right = glm::cross( m_direction, up );
-	if ( glm::length( right ) <= EPSILON ) {
-		up = glm::vec3( 1.0f, 0.0f, 0.0f );
-		right = glm::cross( m_direction, up );
+	Vec3 up = Vec3( 0.0f, 1.0f, 0.0f );
+	Vec3 right = m_direction.cross( up );
+	if ( right.length() <= EPSILON ) {
+		up = Vec3( 1.0f, 0.0f, 0.0f );
+		right = m_direction.cross( up );
 	}
-	up = glm::cross( right, m_direction );
-	glm::vec3 eye = m_position + m_direction;
-	glm::mat4 lightView = glm::lookAt( m_position, eye, up );
+	up = right.cross( m_direction );
+	Vec3 eye = m_position + m_direction;
+	Mat4 lightView = Mat4();
+	lightView.LookAt( m_position, eye, up );
 
 	m_xfrm = lightProjection * lightView;
 
-	return glm::value_ptr( m_xfrm );
+	return m_xfrm.as_ptr();
 }
 
 /*
@@ -334,30 +342,36 @@ void DirectionalLight::DebugDraw( Camera * camera, const float * view, const flo
 		m_debugShader->UseProgram();
 
 		//calculate model matrix
-		glm::mat4 translation = glm::translate( glm::mat4( 1.0f ), m_position );
+		Mat4 translation = Mat4();
+		translation.Translate( m_position );
 
-		glm::vec3 camToLight = ( camera->position - m_position );
-		float dist = glm::length( camToLight ) * 0.05f;
+		Vec3 camToLight = ( camera->m_position - m_position );
+		float dist = camToLight.length() * 0.05f;
 
-		glm::mat4 scale = glm::scale( glm::mat4( 1.0f ), glm::vec3( dist ) );
-
-		glm::vec3 axis = glm::vec3( 1.0, 0.0, 0.0 );
-		glm::vec3 crossVec = glm::cross( axis, m_direction );
-		if( glm::length( crossVec ) <= EPSILON ) {
-			axis = glm::normalize( glm::vec3( 1.0, 1.0, 0.0 ) );
-			crossVec = glm::normalize( glm::cross( axis, m_direction ) );
+		Mat4 scale = Mat4();
+		for ( int i = 0; i < 3; i++ ) {
+			scale[i][i] = dist;
 		}
-		glm::mat4 rotation = glm::mat4( 1.0 );
-		rotation[0] = glm::vec4( crossVec, 0.0 );
-		rotation[1] = glm::vec4( m_direction, 0.0 );
-		rotation[2] = glm::vec4( glm::normalize( glm::cross( m_direction, crossVec ) ), 0.0 );
-		rotation[3] = glm::vec4( 0.0, 0.0, 0.0, 1.0 );
+
+		Vec3 axis = Vec3( 1.0, 0.0, 0.0 );
+		Vec3 crossVec = axis.cross( m_direction );
+		if( crossVec.length() <= EPSILON ) {
+			axis = Vec3( 1.0f, 1.0f, 0.0f );
+			axis.normalize();
+			crossVec = axis.cross( m_direction );
+			crossVec.normalize();
+		}
+		Mat4 rotation = Mat4( 1.0 );
+		rotation[0] = Vec4( crossVec, 0.0 );
+		rotation[1] = Vec4( m_direction, 0.0 );
+		rotation[2] = Vec4( m_direction.cross( crossVec ).normal(), 0.0 );
+		rotation[3] = Vec4( 0.0, 0.0, 0.0, 1.0 );
 		
-		glm::mat4 model = translation * rotation * scale;
+		Mat4 model = translation * rotation * scale;
 
 		//pass uniforms to shader
 		m_debugShader->SetUniformMatrix4f( "view", 1, false, view );
-		m_debugShader->SetUniformMatrix4f( "model", 1, false, glm::value_ptr( model ) );
+		m_debugShader->SetUniformMatrix4f( "model", 1, false, model.as_ptr() );
 		m_debugShader->SetUniformMatrix4f( "projection", 1, false, projection );		
 		
 		//render debug light model
@@ -374,12 +388,12 @@ DirectionalLight::PassUniforms
 void DirectionalLight::PassUniforms( Shader * shader ) {
 	const int typeIndex = 1;
 	shader->SetUniform1i( "light.typeIndex", 1, &typeIndex );
-	shader->SetUniform3f( "light.direction", 1, glm::value_ptr( m_direction ) );
-	shader->SetUniform3f( "light.color", 1, glm::value_ptr( m_color ) );
+	shader->SetUniform3f( "light.direction", 1, m_direction.as_ptr() );
+	shader->SetUniform3f( "light.color", 1, m_color.as_ptr() );
 	const int shadow = ( int )m_shadowCaster;
 	shader->SetUniform1i( "light.shadow", 1, &shadow );
 	if ( m_shadowCaster ) {
-		shader->SetUniformMatrix4f( "light.matrix", 1, false, glm::value_ptr( m_xfrm ) ); //pass light view matrix
+		shader->SetUniformMatrix4f( "light.matrix", 1, false, m_xfrm.as_ptr() ); //pass light view matrix
 		shader->SetAndBindUniformTexture( "light.shadowMap", 4, GL_TEXTURE_2D, m_depthBuffer.m_attachements[0] );
 	} else {
 		shader->SetAndBindUniformTexture( "light.shadowMap", 4, GL_TEXTURE_2D, s_blankShadowMap );
@@ -393,9 +407,9 @@ SpotLight::SpotLight
 ================================
 */
 SpotLight::SpotLight() {
-	m_direction = glm::vec3( 1.0, 0.0, 0.0 );	
+	m_direction = Vec3( 1.0, 0.0, 0.0 );	
 	m_radius = 4.0;
-	m_angle = glm::radians( 90.0f );
+	m_angle = to_radians( 90.0f );
 
 }
 
@@ -404,15 +418,15 @@ SpotLight::SpotLight() {
 SpotLight::SpotLight
 ================================
 */
-SpotLight::SpotLight( glm::vec3 pos, glm::vec3 dir, float degrees, float radius ) {
+SpotLight::SpotLight( Vec3 pos, Vec3 dir, float degrees, float radius ) {
 	m_position = pos;
 	m_direction = dir;
 	m_radius = radius;
 
 	if( degrees < 170.0 ) {
-		m_angle = glm::radians( degrees );
+		m_angle = to_radians( degrees );
 	} else {
-		m_angle = glm::radians( 169.0f );
+		m_angle = to_radians( 169.0f );
 	}
 }
 
@@ -425,21 +439,23 @@ SpotLight::LightMatrix
 */
 const float * SpotLight::LightMatrix() {
 	const float aspect = 1.0f;
-	glm::mat4 lightProjection = glm::perspective( m_angle, aspect, m_near_plane, m_far_plane );
+	Mat4 lightProjection = Mat4();
+	lightProjection.Perspective( m_angle, aspect, m_near_plane, m_far_plane );
 
-	glm::vec3 up = glm::vec3( 0.0f, 1.0f, 0.0f );
-	glm::vec3 right = glm::cross( m_direction, up );
-	if ( glm::length( right ) <= EPSILON ) {
-		up = glm::vec3( 1.0f, 0.0f, 0.0f );
-		right = glm::cross( m_direction, up );
+	Vec3 up = Vec3( 0.0f, 1.0f, 0.0f );
+	Vec3 right = m_direction.cross( up );
+	if ( right.length() <= EPSILON ) {
+		up = Vec3( 1.0f, 0.0f, 0.0f );
+		right = m_direction.cross( up );
 	}
-	up = glm::cross( right, m_direction );
-	glm::vec3 eye = m_position + m_direction;
-	glm::mat4 lightView = glm::lookAt( m_position, eye, up );
+	up = right.cross( m_direction );
+	Vec3 eye = m_position + m_direction;
+	Mat4 lightView = Mat4();
+	lightView.LookAt( m_position, eye, up );
 
 	m_xfrm = lightProjection * lightView;
 
-	return glm::value_ptr( m_xfrm );
+	return m_xfrm.as_ptr();
 }
 
 /*
@@ -463,32 +479,40 @@ void SpotLight::DebugDraw( Camera * camera, const float * view, const float * pr
 		m_debugShader->UseProgram();
 
 		//calculate model matrix
-		glm::mat4 translation = glm::translate( glm::mat4( 1.0f ), m_position );
+		Mat4 translation = Mat4();
+		translation.Translate( m_position );
 
-		glm::vec3 camToLight = ( camera->position - m_position );
-		float dist = glm::length( camToLight ) * 0.05f;		
+		Vec3 camToLight = ( camera->m_position - m_position );
+		float dist = camToLight.length() * 0.05f;
 
-		float obj_angle = glm::radians( 45.0f );
+
+		float obj_angle = to_radians( 45.0f );
 		float scaleFactor = m_angle / obj_angle;
-		glm::mat4 scale = glm::scale( glm::mat4( 1.0f ), glm::vec3( scaleFactor * dist, dist, scaleFactor * dist ) );
-
-		glm::vec3 axis = glm::vec3( 1.0, 0.0, 0.0 );
-		glm::vec3 crossVec = glm::cross( axis, m_direction );
-		if( glm::length( crossVec ) <= EPSILON ) {
-			axis = glm::normalize( glm::vec3( 1.0, 1.0, 0.0 ) );
-			crossVec = glm::normalize( glm::cross( axis, m_direction ) );
+		Vec3 scaleVec = Vec3( scaleFactor * dist, dist, scaleFactor * dist );
+		Mat4 scale = Mat4();
+		for ( int i = 0; i < 3; i++ ) {
+			scale[i][i] = scaleVec[i];
 		}
-		glm::mat4 rotation = glm::mat4( 1.0 );
-		rotation[0] = glm::vec4( crossVec, 0.0 );
-		rotation[1] = glm::vec4( m_direction, 0.0 );
-		rotation[2] = glm::vec4( glm::normalize( glm::cross( m_direction, crossVec ) ), 0.0 );
-		rotation[3] = glm::vec4( 0.0, 0.0, 0.0, 1.0 );
 
-		glm::mat4 model = translation * rotation * scale;
+		Vec3 axis = Vec3( 1.0, 0.0, 0.0 );
+		Vec3 crossVec = axis.cross( m_direction );
+		if( crossVec.length() <= EPSILON ) {
+			axis = Vec3( 1.0f, 1.0f, 0.0f );
+			axis.normalize();
+			crossVec = axis.cross( m_direction );
+			crossVec.normalize();
+		}
+		Mat4 rotation = Mat4( 1.0 );
+		rotation[0] = Vec4( crossVec, 0.0 );
+		rotation[1] = Vec4( m_direction, 0.0 );
+		rotation[2] = Vec4( m_direction.cross( crossVec ).normal(), 0.0 );
+		rotation[3] = Vec4( 0.0, 0.0, 0.0, 1.0 );
+
+		Mat4 model = translation * rotation * scale;
 
 		//pass uniforms to shader
 		m_debugShader->SetUniformMatrix4f( "view", 1, false, view );
-		m_debugShader->SetUniformMatrix4f( "model", 1, false, glm::value_ptr( model ) );
+		m_debugShader->SetUniformMatrix4f( "model", 1, false, model.as_ptr() );
 		m_debugShader->SetUniformMatrix4f( "projection", 1, false, projection );		
 		
 		//render debug light model
@@ -504,17 +528,17 @@ SpotLight::PassUniforms
 */
 void SpotLight::PassUniforms( Shader * shader ) {
 	const int typeIndex = 2;
-	const float lightAngle_cosine = glm::cos( m_angle / 2.0f );
+	const float lightAngle_cosine = cos( m_angle / 2.0f );
 	shader->SetUniform1i( "light.typeIndex", 1, &typeIndex );
-	shader->SetUniform3f( "light.position", 1, glm::value_ptr( m_position ) );
-	shader->SetUniform3f( "light.direction", 1, glm::value_ptr( m_direction ) );
-	shader->SetUniform3f( "light.color", 1, glm::value_ptr( m_color ) );
+	shader->SetUniform3f( "light.position", 1, m_position.as_ptr() );
+	shader->SetUniform3f( "light.direction", 1, m_direction.as_ptr() );
+	shader->SetUniform3f( "light.color", 1, m_color.as_ptr() );
 	shader->SetUniform1f( "light.angle", 1, &lightAngle_cosine ); //passing in cosine so we dont have to do it in the fragment shader
 	shader->SetUniform1f( "light.radius", 1, &m_radius );
 	const int shadow = ( int )m_shadowCaster;
 	shader->SetUniform1i( "light.shadow", 1, &shadow );
 	if ( m_shadowCaster ) {
-		shader->SetUniformMatrix4f( "light.matrix", 1, false, glm::value_ptr( m_xfrm ) ); //pass light view matrix
+		shader->SetUniformMatrix4f( "light.matrix", 1, false, m_xfrm.as_ptr() ); //pass light view matrix
 		shader->SetAndBindUniformTexture( "light.shadowMap", 4, GL_TEXTURE_2D, m_depthBuffer.m_attachements[0] );
 	} else {
 		shader->SetAndBindUniformTexture( "light.shadowMap", 4, GL_TEXTURE_2D, s_blankShadowMap );
@@ -538,7 +562,7 @@ PointLight::PointLight() {
 PointLight::PointLight
 ================================
 */
-PointLight::PointLight( glm::vec3 pos, float radius ) {
+PointLight::PointLight( Vec3 pos, float radius ) {
 	m_position = pos;
 	m_radius = radius;
 	m_shadowFaceIdx = 0;
@@ -564,7 +588,7 @@ PointLight::PassDepthShaderUniforms
 void PointLight::PassDepthShaderUniforms() {
 	m_depthShader->SetUniformMatrix4f( "lightSpaceMatrix", 1, false, LightMatrix() );
 	m_depthShader->SetUniform1f( "far_plane", 1, &m_far_plane );
-	m_depthShader->SetUniform3f( "lightPos", 1, glm::value_ptr( m_position ) );
+	m_depthShader->SetUniform3f( "lightPos", 1, m_position.as_ptr() );
 }
 
 /*
@@ -578,17 +602,21 @@ void PointLight::DebugDraw( Camera * camera, const float * view, const float * p
 		m_debugShader->UseProgram();
 
 		//calculate model matrix
-		glm::mat4 translation = glm::translate( glm::mat4( 1.0f ), m_position );
+		Mat4 translation = Mat4();
+		translation.Translate( m_position );
 
-		glm::vec3 camToLight = ( camera->position - m_position );
-		float dist = glm::length( camToLight ) * 0.05f;		
-		glm::mat4 scale = glm::scale( glm::mat4( 1.0f ), glm::vec3( dist ) );
+		Vec3 camToLight = ( camera->m_position - m_position );
+		float dist = camToLight.length() * 0.05f;
+		Mat4 scale = Mat4();
+		for ( int i = 0; i < 3; i++ ) {
+			scale[i][i] = dist;
+		}
 
-		glm::mat4 model = translation * scale;
+		Mat4 model = translation * scale;
 
 		//pass uniforms to shader
 		m_debugShader->SetUniformMatrix4f( "view", 1, false, view );
-		m_debugShader->SetUniformMatrix4f( "model", 1, false, glm::value_ptr( model ) );
+		m_debugShader->SetUniformMatrix4f( "model", 1, false, model.as_ptr() );
 		m_debugShader->SetUniformMatrix4f( "projection", 1, false, projection );		
 		
 		//render debug light model
@@ -605,14 +633,14 @@ PointLight::PassUniforms
 void PointLight::PassUniforms( Shader * shader ) {
 	const int typeIndex = 3;
 	shader->SetUniform1i( "light.typeIndex", 1, &typeIndex );
-	shader->SetUniform3f( "light.position", 1, glm::value_ptr( m_position ) );
-	shader->SetUniform3f( "light.color", 1, glm::value_ptr( m_color ) );
+	shader->SetUniform3f( "light.position", 1, m_position.as_ptr() );
+	shader->SetUniform3f( "light.color", 1, m_color.as_ptr() );
 	shader->SetUniform1f( "light.radius", 1, &m_radius );
 	const int shadow = ( int )m_shadowCaster;
 	shader->SetUniform1i( "light.shadow", 1, &shadow );
 	shader->SetUniform1f( "light.far_plane", 1, &m_far_plane );
-	const glm::mat4 ident = glm::mat4( 1.0 );
-	shader->SetUniformMatrix4f( "light.matrix", 1, false, glm::value_ptr( ident ) );
+	const Mat4 ident = Mat4( 1.0 );
+	shader->SetUniformMatrix4f( "light.matrix", 1, false, ident.as_ptr() );
 	shader->SetAndBindUniformTexture( "light.shadowMap", 4, GL_TEXTURE_2D, s_blankShadowMap );
 	if ( m_shadowCaster ) {
 		shader->SetAndBindUniformTexture( "light.shadowCubeMap", 5, GL_TEXTURE_CUBE_MAP, m_depthBuffer.m_attachements[0] );
@@ -650,22 +678,26 @@ PointLight::LightMatrix
 */
 const float * PointLight::LightMatrix() {
 	//initialize projection matrix
-	glm::mat4 shadowProj = glm::perspective( glm::radians( 90.0f ), 1.0f, m_near_plane, m_far_plane );
+	Mat4 shadowProj = Mat4();
+	shadowProj.Perspective( to_radians( 90.0f ), 1.0f, m_near_plane, m_far_plane );
 
+	Mat4 view = Mat4();
 	if ( m_shadowFaceIdx == 0 ) {
-		m_xfrm = shadowProj * glm::lookAt( m_position, m_position + glm::vec3( 1.0, 0.0, 0.0 ), glm::vec3( 0.0, -1.0, 0.0 ) );
+		view.LookAt( m_position, m_position + Vec3( 1.0, 0.0, 0.0 ), Vec3( 0.0, -1.0, 0.0 ) );
 	} else if ( m_shadowFaceIdx == 1 ) {
-		m_xfrm = shadowProj * glm::lookAt( m_position, m_position + glm::vec3( -1.0, 0.0, 0.0 ), glm::vec3( 0.0, -1.0, 0.0 ) );
+		view.LookAt( m_position, m_position + Vec3( -1.0, 0.0, 0.0 ), Vec3( 0.0, -1.0, 0.0 ) );		
 	} else if ( m_shadowFaceIdx == 2 ) {
-		m_xfrm = shadowProj * glm::lookAt( m_position, m_position + glm::vec3( 0.0, 1.0, 0.0 ), glm::vec3( 0.0, 0.0, 1.0 ) );
+		view.LookAt( m_position, m_position + Vec3( 0.0, 1.0, 0.0 ), Vec3( 0.0, 0.0, 1.0 ) );
 	} else if ( m_shadowFaceIdx == 3 ) {
-		m_xfrm = shadowProj * glm::lookAt( m_position, m_position + glm::vec3( 0.0, -1.0, 0.0 ), glm::vec3( 0.0, 0.0, -1.0 ) );
+		view.LookAt( m_position, m_position + Vec3( 0.0, -1.0, 0.0 ), Vec3( 0.0, 0.0, -1.0 ) );
 	} else if ( m_shadowFaceIdx == 4 ) {
-		m_xfrm = shadowProj * glm::lookAt( m_position, m_position + glm::vec3( 0.0, 0.0, 1.0 ), glm::vec3( 0.0, -1.0, 0.0 ) );
+		view.LookAt( m_position, m_position + Vec3( 0.0, 0.0, 1.0 ), Vec3( 0.0, -1.0, 0.0 ) );
 	} else {
-		m_xfrm = shadowProj * glm::lookAt( m_position, m_position + glm::vec3( 0.0, 0.0, -1.0 ), glm::vec3( 0.0, -1.0, 0.0 ) );
+		view.LookAt( m_position, m_position + Vec3( 0.0, 0.0, -1.0 ), Vec3( 0.0, -1.0, 0.0 ) );
 	}
-	return glm::value_ptr( m_xfrm );
+	m_xfrm = shadowProj * view;
+
+	return m_xfrm.as_ptr();
 }
 
 /*
@@ -766,17 +798,21 @@ void AmbientLight::DebugDraw( Camera * camera, const float * view, const float *
 		m_debugShader->UseProgram();
 
 		//calculate model matrix
-		glm::mat4 translation = glm::translate( glm::mat4( 1.0f ), m_position );
+		Mat4 translation = Mat4();
+		translation.Translate( m_position );
 
-		glm::vec3 camToLight = ( camera->position - m_position );
-		float dist = glm::length( camToLight ) * 0.05f;		
-		glm::mat4 scale = glm::scale( glm::mat4( 1.0f ), glm::vec3( dist ) );
+		Vec3 camToLight = ( camera->m_position - m_position );
+		float dist = camToLight.length() * 0.05f;
+		Mat4 scale = Mat4();
+		for ( int i = 0; i < 3; i++ ) {
+			scale[i][i] = dist;
+		}
 
-		glm::mat4 model = translation * scale;
+		Mat4 model = translation * scale;
 
 		//pass uniforms to shader
 		m_debugShader->SetUniformMatrix4f( "view", 1, false, view );
-		m_debugShader->SetUniformMatrix4f( "model", 1, false, glm::value_ptr( model ) );
+		m_debugShader->SetUniformMatrix4f( "model", 1, false, model.as_ptr() );
 		m_debugShader->SetUniformMatrix4f( "projection", 1, false, projection );		
 		
 		//render debug light model
@@ -794,7 +830,7 @@ void AmbientLight::PassUniforms( Shader * shader ) {
 	const int typeIndex = 4;
 	shader->SetUniform1i( "light.typeIndex", 1, &typeIndex );
 	shader->SetUniform1f( "light.ambient", 1, &m_strength );
-	shader->SetUniform3f( "light.color", 1, glm::value_ptr( m_color ) );
+	shader->SetUniform3f( "light.color", 1, m_color.as_ptr() );
 	const int shadow = 0;
 	shader->SetUniform1i( "light.shadow", 1, &shadow );
 }
@@ -805,7 +841,7 @@ EnvProbe::EnvProbe
 ================================
 */
 EnvProbe::EnvProbe() {
-	m_position = glm::vec3();
+	m_position = Vec3();
 	m_irradianceMap = CubemapTexture();
 	m_environmentMap = CubemapTexture();
 	m_meshCount = 0;
@@ -823,7 +859,7 @@ EnvProbe::EnvProbe() {
 EnvProbe::EnvProbe
 ================================
 */
-EnvProbe::EnvProbe( glm::vec3 pos ) {
+EnvProbe::EnvProbe( Vec3 pos ) {
 	m_position = pos;
 	m_irradianceMap = CubemapTexture();
 	m_environmentMap = CubemapTexture();
@@ -867,7 +903,7 @@ bool EnvProbe::MeshByIndex( unsigned int index, Mesh ** obj ) {
 /*
 ================================
 EnvProbe::BuildProbe
-	-load cubemap textures for this probe
+	-load cubemap texture files for this probe
 ================================
 */
 bool EnvProbe::BuildProbe( unsigned int probeIdx ) {
@@ -884,24 +920,23 @@ bool EnvProbe::BuildProbe( unsigned int probeIdx ) {
 	probeName.Replace( "data\\scenes\\", "data\\generated\\envprobes\\", false );
 	probeName = probeName.Substring( 0, probeName.Length() - 4 );
 
-	//load irradiance map
-	Str irradiance_relativePath = Str( probeName.c_str() );
-	irradiance_relativePath.Append( "_irr_" );
-	irradiance_relativePath.Append( probe_suffix );
-	irradiance_relativePath.Append( ".hdr" );
-	if ( !m_irradianceMap.InitFromFile( irradiance_relativePath.c_str() ) ) {
-		return false;
-	}
-
 	//load env map and generate mips
 	Str environment_relativePath = Str( probeName.c_str() );
-	environment_relativePath.Append( "_env_" );
+	environment_relativePath.Append( "\\env_" );
 	environment_relativePath.Append( probe_suffix );
 	environment_relativePath.Append( ".hdr" );
-	if ( !m_environmentMap.InitFromFile( environment_relativePath.c_str() ) ) {
-		return false;
+	if ( m_environmentMap.InitFromFile( environment_relativePath.c_str() ) ) {
+		m_environmentMap.PrefilterSpeculateProbe();
+	} else {
+		assert( m_irradianceMap.InitFromFile( "data\\texture\\system\\error_cube.tga" ) );
 	}
-	void PrefilterSpeculateProbe();
+
+	//load irradiance map
+	Str irradiance_relativePath = environment_relativePath.Substring( 0, environment_relativePath.Length() - 4 );
+	irradiance_relativePath.Append( "_irr.hdr" );
+	if ( !m_irradianceMap.InitFromFile( irradiance_relativePath.c_str() ) ) {
+		assert( m_irradianceMap.InitFromFile( "data\\texture\\system\\error_cube.tga" ) );
+	}
 
 	return true;
 }
@@ -941,44 +976,50 @@ bool EnvProbe::PassUniforms( Str materialDeclName ) {
 EnvProbe::RenderCubemaps
 ================================
 */
-unsigned int EnvProbe::RenderCubemaps( const unsigned int cubemapSize ) {
+std::vector< unsigned int > EnvProbe::RenderCubemaps( const unsigned int cubemapSize ) {
+	glViewport( 0, 0, cubemapSize, cubemapSize ); //Set the OpenGL viewport to be the entire size of the window
+
 	Scene * scene = Scene::getInstance();
 
-	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
-
-	Framebuffer environmentMapFBO( "cubemap" );
-	environmentMapFBO.CreateNewBuffer( cubemapSize, cubemapSize, "cubemap" );
-	environmentMapFBO.AttachCubeMapTextureBuffer( GL_RGB16F, GL_COLOR_ATTACHMENT0, GL_RGB, GL_FLOAT );
-	if ( !environmentMapFBO.Status() ) {
-		assert( false );
+	//create list of 6 FBOs. Once for each face of cube
+	std::vector< Framebuffer > fbos;
+	for ( unsigned int i = 0; i < 6; i++ ) {
+		Framebuffer newFBO = Framebuffer( "screenTexture" );
+		newFBO.CreateNewBuffer( cubemapSize, cubemapSize, "framebuffer" );
+		newFBO.AttachTextureBuffer( GL_RGB16F, GL_COLOR_ATTACHMENT0, GL_RGB, GL_FLOAT );
+		newFBO.AttachRenderBuffer( GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL_ATTACHMENT );
+		if ( !newFBO.Status() ) {
+			assert( false );
+		}
+		fbos.push_back( newFBO );
 	}
 
-	glm::mat4 projection = glm::perspective( glm::radians( 90.0f ), 1.0f, 0.1f, 10.0f );
-	glm::mat4 views[] = {
-		glm::lookAt( m_position, glm::vec3( 1.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ) ),
-		glm::lookAt( m_position, glm::vec3( -1.0f, 0.0f, 0.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ) ),
-		glm::lookAt( m_position, glm::vec3( 0.0f, 1.0f, 0.0f ), glm::vec3( 0.0f, 0.0f, 1.0f ) ),
-		glm::lookAt( m_position, glm::vec3( 0.0f, -1.0f, 0.0f ), glm::vec3( 0.0f, 0.0f, -1.0f ) ),
-		glm::lookAt( m_position, glm::vec3( 0.0f, 0.0f, 1.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ) ),
-		glm::lookAt( m_position, glm::vec3( 0.0f, 0.0f, -1.0f ), glm::vec3( 0.0f, -1.0f, 0.0f ) )
-	};
+	//set projections for cubemap render
+	Mat4 projection = Mat4();
+	projection.Perspective( to_radians( 90.0f ), 1.0f, 0.01f, 100.0f );
+	Mat4 views[] = { Mat4(), Mat4(), Mat4(), Mat4(), Mat4(), Mat4() };
+	views[0].LookAt( m_position, Vec3( 1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+	views[1].LookAt( m_position, Vec3( -1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+	views[2].LookAt( m_position, Vec3( 0.0f, 1.0f, 0.0f ), Vec3( 0.0f, 0.0f, 1.0f ) );
+	views[3].LookAt( m_position, Vec3( 0.0f, -1.0f, 0.0f ), Vec3( 0.0f, 0.0f, -1.0f ) );
+	views[4].LookAt( m_position, Vec3( 0.0f, 0.0f, 1.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+	views[5].LookAt( m_position, Vec3( 0.0f, 0.0f, -1.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
 
 	//draw skybox
 	glDisable( GL_BLEND );
-	environmentMapFBO.Bind();
 	MaterialDecl* skyMat;
 	Cube sceneSkybox = scene->GetSkybox();
 	skyMat = MaterialDecl::GetMaterialDecl( sceneSkybox.m_surface->materialName.c_str() );
 	skyMat->BindTextures();
 	for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
-		glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + faceIdx, environmentMapFBO.m_attachements[0], 0 );
+		fbos[faceIdx].Bind();
 		glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
-		const glm::mat4 skyBox_viewMat = glm::mat4( glm::mat3( views[faceIdx] ) );
-		skyMat->shader->SetUniformMatrix4f( "projection", 1, false, glm::value_ptr( projection ) );
-		skyMat->shader->SetUniformMatrix4f( "view", 1, false, glm::value_ptr( skyBox_viewMat ) );
+		const Mat4 skyBox_viewMat = views[faceIdx].as_Mat3().as_Mat4();
+		skyMat->shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
+		skyMat->shader->SetUniformMatrix4f( "view", 1, false, skyBox_viewMat.as_ptr() );
 		sceneSkybox.DrawSurface( true );
+		fbos[faceIdx].Unbind();
 	}
-	environmentMapFBO.Unbind();
 	glEnable( GL_BLEND );
 	
 	//render the scene
@@ -1009,7 +1050,7 @@ unsigned int EnvProbe::RenderCubemaps( const unsigned int cubemapSize ) {
 		}
 
 		//Draw the scene to the main buffer
-		environmentMapFBO.Bind(); //bind the framebuffer so all subsequent drawing is to it.
+		
 		glViewport( 0, 0, cubemapSize, cubemapSize ); //Set the OpenGL viewport to be the entire size of the window
 		if ( i > 0 ) {
 			//subsequent lighting passes add their contributions now that the first one has set all initial depth values.
@@ -1017,8 +1058,8 @@ unsigned int EnvProbe::RenderCubemaps( const unsigned int cubemapSize ) {
 		}
 
 		for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
-			glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + faceIdx, environmentMapFBO.m_attachements[0], 0 );
-			//glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+			fbos[faceIdx].Bind(); //bind the framebuffer so all subsequent drawing is to it.
+			glClear( GL_DEPTH_BUFFER_BIT ); //clear only depth because we wanna keep skybox color
 
 			MaterialDecl* matDecl;
 			for ( int n = 0; n < scene->MeshCount(); n++ ) {
@@ -1030,8 +1071,8 @@ unsigned int EnvProbe::RenderCubemaps( const unsigned int cubemapSize ) {
 					matDecl->BindTextures();
 
 					//pass in camera matrices
-					matDecl->shader->SetUniformMatrix4f( "view", 1, false, glm::value_ptr( views[faceIdx] ) );		
-					matDecl->shader->SetUniformMatrix4f( "projection", 1, false, glm::value_ptr( projection ) );
+					matDecl->shader->SetUniformMatrix4f( "view", 1, false, views[faceIdx].as_ptr() );		
+					matDecl->shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
 
 					//exit early if this material is errored out
 					if ( matDecl->m_shaderProg == "error" ) {
@@ -1040,7 +1081,7 @@ unsigned int EnvProbe::RenderCubemaps( const unsigned int cubemapSize ) {
 					}
 
 					//pass camera position
-					matDecl->shader->SetUniform3f( "camPos", 1, glm::value_ptr( m_position ) );
+					matDecl->shader->SetUniform3f( "camPos", 1, m_position.as_ptr() );
 
 					//pass lights data
 					light->PassUniforms( matDecl->shader );
@@ -1049,9 +1090,14 @@ unsigned int EnvProbe::RenderCubemaps( const unsigned int cubemapSize ) {
 					mesh->DrawSurface( j );
 				}
 			}
-		}
-		environmentMapFBO.Unbind();
+			fbos[faceIdx].Unbind();
+		}		
 	}
-	
-	return environmentMapFBO.m_attachements[0];
+
+	//gather all texture ids from color attachments of the fbos
+	std::vector< unsigned int > textureIDs;
+	for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {	
+		textureIDs.push_back( fbos[faceIdx].m_attachements[0] );
+	}
+	return textureIDs;
 }

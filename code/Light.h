@@ -1,13 +1,10 @@
 #pragma once
+#ifndef __LIGHT_H_INCLUDE__
+#define __LIGHT_H_INCLUDE__
+
 #include "Framebuffer.h"
 #include "Mesh.h"
 #include "Camera.h"
-
-#include <glm.hpp>
-#include <gtc/matrix_transform.hpp>
-#include <gtc/type_ptr.hpp>
-
-#define EPSILON 0.000001f
 
 /*
 ==============================
@@ -17,16 +14,16 @@ Light
 class Light {
 	public:
 		Light();
-		Light( glm::vec3 pos );
+		Light( Vec3 pos );
 		~Light() { delete m_depthShader; }
 
-		const glm::vec3 GetPosition() { return m_position; }
-		void SetPosition( glm::vec3 pos ) { m_position = pos; }
+		const Vec3 GetPosition() { return m_position; }
+		void SetPosition( Vec3 pos ) { m_position = pos; }
 
-		const glm::vec3 GetColor() { return m_color; }
-		void SetColor( glm::vec3 col ) { m_color = col; }
+		const Vec3 GetColor() { return m_color; }
+		void SetColor( Vec3 col ) { m_color = col; }
 
-		virtual const float * LightMatrix() { return glm::value_ptr( glm::mat4( 1 ) ); } //return identity matrix
+		virtual const float * LightMatrix() { return m_xfrm.as_ptr(); } //return identity matrix
 
 		virtual void DebugDrawEnable();
 		virtual void DebugDraw( Camera * camera, const float * view, const float * projection );
@@ -47,8 +44,8 @@ class Light {
 		void DebugDrawSetup( std::string obj );
 		
 		float m_near_plane, m_far_plane;
-		glm::vec3 m_position, m_color;
-		glm::mat4 m_xfrm;
+		Vec3 m_position, m_color;
+		Mat4 m_xfrm;
 
 		Mesh m_mesh;
 		Shader * m_debugShader;
@@ -74,12 +71,12 @@ DirectionalLight
 */
 class DirectionalLight : public Light {
 	public:
-		DirectionalLight() { m_direction = glm::vec3( 0.0 ); }
-		DirectionalLight( glm::vec3 dir ) { m_direction = glm::normalize( dir ); }
+		DirectionalLight() { m_direction = Vec3( 0.0 ); }
+		DirectionalLight( Vec3 dir ) { m_direction = dir.normal(); }
 		~DirectionalLight() {};
 
-		const glm::vec3 GetDirection() { return m_direction; }
-		void SetDirection( glm::vec3 dir ) { m_direction = dir; }
+		const Vec3 GetDirection() { return m_direction; }
+		void SetDirection( Vec3 dir ) { m_direction = dir; }
 
 		const float * LightMatrix();
 
@@ -89,7 +86,7 @@ class DirectionalLight : public Light {
 		void PassUniforms( Shader* shader ) override;
 
 	private:
-		glm::vec3 m_direction;
+		Vec3 m_direction;
 
 };
 
@@ -101,14 +98,14 @@ SpotLight
 class SpotLight : public Light {
 	public:
 		SpotLight();
-		SpotLight( glm::vec3 pos, glm::vec3 dir, float degrees, float radius );
+		SpotLight( Vec3 pos, Vec3 dir, float degrees, float radius );
 		~SpotLight() {};
 
 		const float GetRadius() { return m_radius; }
 		void SetRadius( float radius ) { m_radius = radius; m_far_plane = radius; }
 
-		const glm::vec3 GetDirection() { return m_direction; }
-		void SetDirection( glm::vec3 dir ) { m_direction = dir; }
+		const Vec3 GetDirection() { return m_direction; }
+		void SetDirection( Vec3 dir ) { m_direction = dir; }
 
 		void SetAngle( float degrees ) { m_angle = degrees; }
 
@@ -122,7 +119,7 @@ class SpotLight : public Light {
 	private:
 		float m_radius; //radius of the light source used for attenuation
 		float m_angle; //radians
-		glm::vec3 m_direction;
+		Vec3 m_direction;
 };
 
 /*
@@ -133,7 +130,7 @@ PointLight
 class PointLight : public Light {
 	public:
 		PointLight();
-		PointLight( glm::vec3 pos, float radius );
+		PointLight( Vec3 pos, float radius );
 		~PointLight() {};
 
 		const float GetRadius() { return m_radius; }
@@ -190,25 +187,25 @@ EnvProbe
 class EnvProbe {
 	public:
 		EnvProbe();
-		EnvProbe( glm::vec3 pos );
+		EnvProbe( Vec3 pos );
 		~EnvProbe() {};
 
-		const glm::vec3 GetPosition() { return m_position; }
-		void SetPosition( glm::vec3 pos ) { m_position = pos; }
+		const Vec3 GetPosition() { return m_position; }
+		void SetPosition( Vec3 pos ) { m_position = pos; }
 
 		int MeshCount() { return m_meshCount; }
 		bool MeshByIndex( unsigned int index, Mesh ** obj );
 		Mesh * MeshByIndex( unsigned int index );
-		void AddMesh( Mesh * ) { m_meshes[ m_meshCount ]; m_meshCount += 1; }
+		void AddMesh( Mesh * mesh ) { m_meshes[m_meshCount] = mesh; m_meshCount += 1; }
 
 		bool BuildProbe( unsigned int probeIdx );
 		bool PassUniforms( Str materialDeclNames );
-		unsigned int RenderCubemaps( const unsigned int cubemapSize );
+		std::vector<unsigned int> RenderCubemaps( const unsigned int cubemapSize );
 
 		static Shader * s_ambientPass_shader;
 
 	private:
-		glm::vec3 m_position;
+		Vec3 m_position;
 
 		CubemapTexture m_irradianceMap;
 		CubemapTexture m_environmentMap;
@@ -218,3 +215,5 @@ class EnvProbe {
 
 		static Texture s_brdfIntegrationMap;
 };
+
+#endif
