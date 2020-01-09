@@ -49,7 +49,7 @@ bool MaterialDecl::LoadPathsFromFile( const char * decl_relative, std::string & 
 			findAndReplaceAll( uniformName, "\r\n", "" );
 			TextureSpecs * newTextureSpec = new TextureSpecs();
 			newTextureSpec->type = "framebuffer";
-			texturePaths[uniformName] = newTextureSpec;
+			texturePaths.insert( std::make_pair( uniformName, newTextureSpec ) ); //add to texture resource
 
 		} else if ( sscanf( buff, "%s %s %s", strBuffer1, strBuffer2, strBuffer3 ) == 3 ) { //associates a uniform name with a texture
 			uniformName = strBuffer1;
@@ -65,7 +65,7 @@ bool MaterialDecl::LoadPathsFromFile( const char * decl_relative, std::string & 
 			newTextureSpec->type = textureType;
 			newTextureSpec->path = texturePath;
 
-			texturePaths[uniformName] = newTextureSpec; //add to texture resource
+			texturePaths.insert( std::make_pair( uniformName, newTextureSpec ) ); //add to texture resource
 		}
 	}
 	fclose( fp );

@@ -44,6 +44,17 @@ bool Scene::MeshByIndex( unsigned int index, Mesh ** obj ) {
 
 /*
 ================================
+Scene::AddLight
+================================
+*/
+const unsigned int Scene::AddLight( Light * light ) {
+	m_lightCount += 1;
+	m_lights[ m_lightCount - 1 ] = light;
+	return m_lightCount - 1;
+}
+
+/*
+================================
 Scene::LightByIndex
 ================================
 */
@@ -134,17 +145,15 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 			} else if ( sscanf_s( buff, "\tpos %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //position
 				currentLight->SetPosition( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tdir %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //direction
-				SpotLight* tempSpotLight = ( SpotLight* )currentLight;
-				tempSpotLight->SetDirection( Vec3( val3 ) );
+				currentLight->SetDirection( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tang %f", &val1 ) == 1 ) { //inner angle
 				SpotLight* tempSpotLight = ( SpotLight* )currentLight;
 				tempSpotLight->SetAngle( val1 );
 			} else if ( sscanf_s( buff, "\tsiz %f", &val1 ) == 1 ) { //radius
-				SpotLight* tempSpotLight = ( SpotLight* )currentLight;
-				tempSpotLight->SetRadius( val1 );
+				currentLight->SetRadius( val1 );
 			} else if ( sscanf_s( buff, "\tsha %d", &intVal ) == 1 ) { //shadow
 				if ( intVal == 1 ) {
-					currentLight->EnableShadows();
+					currentLight->SetShadow( true );
 				}
 			}
 		} else if ( loadingDirectionalLightEntity ) { //load directionallight data
@@ -155,11 +164,12 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 			} else if ( sscanf_s( buff, "\tpos %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //position
 				currentLight->SetPosition( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tdir %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //direction
-				DirectionalLight* tempDirectionalLight = ( DirectionalLight* )currentLight;
-				tempDirectionalLight->SetDirection( Vec3( val3 ) );
+				currentLight->SetDirection( Vec3( val3 ) );
+			} else if ( sscanf_s( buff, "\tsiz %f", &val1 ) == 1 ) { //radius
+				currentLight->SetRadius( val1 );
 			} else if ( sscanf_s( buff, "\tsha %d", &intVal ) == 1 ) { //shadow
 				if ( intVal == 1 ) {
-					currentLight->EnableShadows();
+					currentLight->SetShadow( true );
 				}
 			}
 		} else if ( loadingPointLightEntity ) { //load pointlight data
@@ -170,18 +180,11 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 			} else if ( sscanf_s( buff, "\tpos %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //position
 				currentLight->SetPosition( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tsiz %f", &val1 ) == 1 ) { //radius
-				PointLight* tempPointLight = ( PointLight* )currentLight;
-				tempPointLight->SetRadius( val1 );
+				currentLight->SetRadius( val1 );
 			} else if ( sscanf_s( buff, "\tsha %d", &intVal ) == 1 ) { //shadow
 				if ( intVal == 1 ) {
-					currentLight->EnableShadows();
+					currentLight->SetShadow( true );
 				}
-			}
-		} else if ( loadingAmbientLightEntity ) { //load ambientlight data
-			if ( strncmp( buff, "}", 1 ) == 0 ) {
-				loadingAmbientLightEntity = false;
-			} else if ( sscanf_s( buff, "\tcol %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //color
-				currentLight->SetColor( Vec3( val3 ) );
 			}
 		} else if ( loadingEnvProbeEntity ) { //load environment probe data
 			if ( strncmp( buff, "}", 1 ) == 0 ) {
@@ -196,7 +199,7 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 			bool alreadyExists = false;
 			for( unsigned int i = 0; i < m_meshCount; i++ ) {
 				currentMesh = m_meshes[i];
-				if ( strcmp( currentMesh->m_name, buff ) == 0 ) {
+				if ( strcmp( currentMesh->m_name.c_str(), buff ) == 0 ) {
 					alreadyExists = true;
 					break;
 				}
@@ -228,22 +231,22 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 			m_lightCount += 1;
 			m_lights[ m_lightCount - 1 ] = new SpotLight();
 			currentLight = m_lights[ m_lightCount - 1 ];
+			currentLight->m_idx = m_lightCount - 1;
+			currentLight->Initialize();
 			loadingSpotLightEntity = true;
 		} else if ( strncmp( buff, "directionallight {", 18 ) == 0 ) { //directionalight entity header
 			m_lightCount += 1;
 			m_lights[ m_lightCount - 1 ] = new DirectionalLight();
 			currentLight = m_lights[ m_lightCount - 1 ];
+			currentLight->m_idx = m_lightCount - 1;
+			currentLight->Initialize();
 			loadingDirectionalLightEntity = true;
 		} else if ( strncmp( buff, "pointlight {", 12 ) == 0 ) { //pointlight entity header
 			m_lightCount += 1;
 			m_lights[ m_lightCount - 1 ] = new PointLight();
 			currentLight = m_lights[ m_lightCount - 1 ];
+			currentLight->Initialize();
 			loadingPointLightEntity = true;
-		} else if ( strncmp( buff, "ambientlight {", 14 ) == 0 ) { //ambientlight entity header
-			m_lightCount += 1;
-			m_lights[ m_lightCount - 1 ] = new AmbientLight();
-			currentLight = m_lights[ m_lightCount - 1 ];
-			loadingAmbientLightEntity = true;
 		} else if ( strncmp( buff, "envProbe {", 10 ) == 0 ) { //envProbe entity header
 			m_envProbeCount += 1;
 			m_envProbes[ m_envProbeCount - 1 ] = new EnvProbe();
@@ -258,6 +261,9 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 
 	//pass models and instances to the GPU
 	LoadVAOs();
+
+	//build shadowmap atlas for shadowcasting lights
+	Light::InitShadowAtlas();
 
 	//build env probes
 	BuildProbes();
@@ -360,7 +366,8 @@ Scene::BuildProbes
 */
 void Scene::BuildProbes() {
 	if ( m_envProbeCount < 1 ) {
-		return;
+		m_envProbeCount += 1;
+		m_envProbes[ m_envProbeCount - 1 ] = new EnvProbe();
 	}
 
 	//associate all meshes with one envProbe
@@ -382,6 +389,7 @@ void Scene::BuildProbes() {
 		}
 		EnvProbe * nearestProbe = m_envProbes[nearestProbeIdx];
 		nearestProbe->AddMesh( mesh );
+		mesh->SetProbe( nearestProbe );
 	}
 
 	//call EnvProbe::BuildProbe function which fetches env and irradiance cubemap images and generates specular mips.

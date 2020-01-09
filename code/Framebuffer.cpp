@@ -39,6 +39,7 @@ Framebuffer::Framebuffer
 ================================
 */
 Framebuffer::Framebuffer( std::string colorbufferUniform ) {
+	m_id = 0;
 	m_colorbufferUniform = colorbufferUniform;
 	m_colorBufferCount = 0;
 	m_multisample = 0;
@@ -287,33 +288,17 @@ void Framebuffer::CreateScreen( int x_offset, int y_offset, int width, int heigh
 		0, 2, 3
 	};
 
-	//create buffers
-	unsigned int VBO, EBO;
+	//pass to GPU
+	unsigned int VBO;
 	glGenVertexArrays( 1, &m_screenVAO );
 	glGenBuffers( 1, &VBO );
-	glGenBuffers( 1, &EBO );
-	
-	//put openGL in the state to bind/configure the VAO FIRST
 	glBindVertexArray( m_screenVAO );
-
-	//create BVO
-	glBindBuffer( GL_ARRAY_BUFFER, VBO ); //bind it to GL_ARRAY_BUFFER target. This effectively sets the buffer type.
-	glBufferData( GL_ARRAY_BUFFER, sizeof( vertices ), vertices, GL_STATIC_DRAW ); //load vert data into it as static data (wont change)
-
-	//create EBO for indexed drawing of tris
-	glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, EBO );
-	glBufferData( GL_ELEMENT_ARRAY_BUFFER, sizeof( triangles ), triangles, GL_STATIC_DRAW );
-
-	//Each vertex attribute takes its data from memory managed by a VBO.
-	//Since the previously defined VBO is still bound before calling glVertexAttribPointer vertex attribute 0 is now associated with its(the VBOs) vertex data.
-	glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof( float ), ( void* )0 ); //position
+	glBindBuffer( GL_ARRAY_BUFFER, VBO );
+	glBufferData( GL_ARRAY_BUFFER, sizeof( vertices ), &vertices, GL_STATIC_DRAW );
 	glEnableVertexAttribArray( 0 );
-	glVertexAttribPointer( 1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof( float ), ( void* )( 12 * sizeof( float ) ) ); //uvs
+	glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof( float ), ( void * )0 ); //position
 	glEnableVertexAttribArray( 1 );
-
-	//unbind VBO and VAO
-	glBindBuffer( GL_ARRAY_BUFFER, 0 );
-	glBindVertexArray( 0 );
+	glVertexAttribPointer( 1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof( float ), ( void* )( 12 * sizeof( float ) ) ); //uvs
 }
 
 /*
@@ -327,11 +312,14 @@ void Framebuffer::Draw( unsigned int colorBuffer ) {
 
 	m_shader->UseProgram();
 	m_shader->SetAndBindUniformTexture( m_colorbufferUniform.c_str(), 0, GL_TEXTURE_2D, colorBuffer );
-	glBindVertexArray( m_screenVAO );
 	glActiveTexture( GL_TEXTURE0 );
-	glBindTexture( GL_TEXTURE_2D, colorBuffer ); //use the color attachment texture as the texture of the quad plane
-	glDrawElements( GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0 );
+	glBindTexture( GL_TEXTURE_2D, colorBuffer );
+
+	glBindVertexArray( m_screenVAO );
+	glDrawArrays( GL_QUADS, 0, 4 );	
+
 	glBindTexture( GL_TEXTURE_2D, 0 );
+	glBindVertexArray( 0 );
 
 	glEnable( GL_DEPTH_TEST );
 }

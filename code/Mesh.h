@@ -3,10 +3,12 @@
 #define __MESH_H_INCLUDE__
 
 #include <vector>
-
 #include "Vector.h"
 #include "Matrix.h"
 #include "Decl.h"
+
+class EnvProbe;
+
 
 struct tri_t {
 	unsigned int a;
@@ -66,16 +68,20 @@ Mesh
 */
 class Mesh {
 	public:
-		Mesh() {};
-		~Mesh() { delete m_name; };
+		Mesh() { m_probe = NULL; };
+		~Mesh() {};
 		bool LoadMSHFromFile( const char * msh_relative );
 		bool LoadOBJFromFile( const char * obj_relative );
 		void DrawSurface( unsigned int surfaceIdx );
 		unsigned int LoadVAO( const unsigned int surfaceIdx );
 				
-		char * m_name;
+		Str m_name;
 
 		const bbox& GetBounds() { return m_bounds; }
+		const Vec3 GetCenter() { return ( m_bounds.max + m_bounds.min ) / 2.0f; }
+
+		const EnvProbe * GetProbe() const { return m_probe; }
+		void SetProbe( EnvProbe * probe ) { m_probe = probe; }
 
 		std::vector< surface* > m_surfaces; //geometry data for mesh.
 		std::vector< Str > m_materials; //list of materials used in mesh
@@ -85,6 +91,8 @@ class Mesh {
 		void AddSurface();
 
 		bbox m_bounds;
+
+		EnvProbe * m_probe;
 
 		std::vector< vert_t > m_surfaceVerts; //the vertices of the surface being loaded
 		std::vector< tri_t > m_surfaceTris; //vert indexes (every 3 represents a triangle) of the surface being loaded

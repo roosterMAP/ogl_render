@@ -1,50 +1,17 @@
 #include "Light.h"
-#include "Scene.h"
 
-bool Light::s_drawEnable = false;
+unsigned int Light::s_lightCount = 0;
+unsigned int Light::s_shadowCastingLightCount = 0;
+Shader * Light::s_debugShader = new Shader();
+Shader * Light::s_depthShader = new Shader();
+Framebuffer Light::s_depthBufferAtlas = Framebuffer( "depthMap" );
+unsigned int Light::s_partitionSize = s_depthBufferAtlasSize_min;
 
-//vertex shader prog for debug light object
-const char * Light::s_vshader_source =
-	"#version 330 core\n"
-	"layout ( location = 0 ) in vec3 aPos;"
-	"uniform mat4 view;"
-	"uniform mat4 model;"
-	"uniform mat4 projection;"
-	"void main() {"
-	"	gl_Position = projection * view * model * vec4( aPos.x, aPos.y, aPos.z, 1.0 );"
-	"}";
+Mesh Light::s_debugModel;
+Mesh DirectionalLight::s_debugModel_directional;
+Mesh SpotLight::s_debugModel_spot;
+Mesh PointLight::s_debugModel_point;
 
-//fragment shader prog for debug light object
-const char * Light::s_fshader_source =
-	"#version 330 core\n"
-	"uniform vec3 color;"
-	"out vec4 FragColor;"
-	"void main() {"
-	"	FragColor = vec4( color, 1.0 );"
-	"}";
-
-//vertex shader prog for depth map shader
-const char * Light::s_depth_vshader_source =
-	"#version 330 core\n"
-	"layout ( location = 0 ) in vec3 aPos;"
-	"layout ( location = 5 ) in mat4 model;"
-	"uniform mat4 lightSpaceMatrix;"
-	"void main() {"
-	"	gl_Position = lightSpaceMatrix * model * vec4( aPos, 1.0 );"
-	"}";
-
-//fragment shader prog for depth map shader
-const char * Light::s_depth_fshader_source =
-	"#version 330 core\n"
-	"void main() {"
-	"	gl_FragDepth = gl_FragCoord.z;"
-	"}";
-
-//texture ids of blank shadow maps to be passed to shader if light is not shadowcasting
-unsigned int Light::s_blankShadowMap = 0;
-unsigned int Light::s_blankShadowCubeMap = 0;
-
-Shader * EnvProbe::s_ambientPass_shader = new Shader();
 Texture EnvProbe::s_brdfIntegrationMap = Texture();
 
 /*
@@ -53,257 +20,279 @@ Light::Light
 ================================
 */
 Light::Light() {
-	m_position = Vec3( 0.0 );
-	m_color = Vec3( 1.0 );
+	//ensure all static members are initialized
+	if ( s_debugShader->GetShaderProgram() == 0 ) {
+		//vertex shader prog for debug light object
+		const char * debug_vshader_source =
+			"#version 330 core\n"
+			"layout ( location = 0 ) in vec3 aPos;"
+			"uniform mat4 view;"
+			"uniform mat4 model;"
+			"uniform mat4 projection;"
+			"void main() {"
+			"	gl_Position = projection * view * model * vec4( aPos.x, aPos.y, aPos.z, 1.0 );"
+			"}";
+
+		//fragment shader prog for debug light object
+		const char * debug_fshader_source =
+			"#version 330 core\n"
+			"uniform vec3 color;"
+			"out vec4 FragColor;"
+			"void main() {"
+			"	FragColor = vec4( color, 1.0 );"
+			"}";
+
+		s_debugShader->CompileShaderFromCSTR( debug_vshader_source, debug_fshader_source );
+	}
+
+	if ( s_depthShader->GetShaderProgram() == 0 ) {
+		//vertex shader prog for depth map shader
+		const char * depth_vshader_source =
+			"#version 330 core\n"
+			"layout ( location = 0 ) in vec3 aPos;"
+			"layout ( location = 5 ) in mat4 model;"
+			"uniform mat4 lightSpaceMatrix;"
+			"void main() {"
+			"	gl_Position = lightSpaceMatrix * model * vec4( aPos, 1.0 );"
+			"}";
+
+		//fragment shader prog for depth map shader
+		const char * depth_fshader_source =
+			"#version 330 core\n"
+			"void main() {"
+			"	gl_FragDepth = gl_FragCoord.z;"
+			"}";
+
+		s_depthShader->CompileShaderFromCSTR( depth_vshader_source, depth_fshader_source );
+	}
+
+	m_shadowIndex = -1;
+	m_PosInShadowAtlas = Vec2();
+}
+
+/*
+================================
+Light::Initialize
+	-Initialize members and shadow stuff
+================================
+*/
+void Light::Initialize() {
+	s_lightCount += 1; //increment lightcounter
+
+	//initialize members
 	m_shadowCaster = false;
 	m_near_plane = 0.1f;
-	m_far_plane = 7.5f;
-	m_depthBuffer = Framebuffer( "depthMap" );
-	m_xfrm = Mat4();
+	m_far_plane = 10.0f;
+	m_position = Vec3( 0.0f );
+	m_color = Vec3( 1.0f );
+	m_direction = Vec3( 1.0f, 0.0f, 0.0f );	
+	m_xfrm = Mat4();	
+}
 
-	if ( s_blankShadowMap == 0 ) {
-		s_blankShadowMap = CreateBlankShadowMapTexture( 512, 512 );
-		s_blankShadowCubeMap = CreateBlankShadowCubeMapTexture( 512, 512 );
+/*
+================================
+Light::InitShadowAtlas
+	-Creates the FBO that stores depth maps for shadowmapping
+	-Gets called from the Scene class once all lights have been loaded into the scene.
+================================
+*/
+void Light::InitShadowAtlas() {
+	if ( s_depthBufferAtlas.GetID() == 0 ) {
+		unsigned int atlasSize = 4;
+		if ( s_shadowCastingLightCount > 0 ) {
+			const float mapsPerRow = ceil( sqrt( ( float )s_shadowCastingLightCount ) );
+			atlasSize = mapsPerRow * s_depthBufferAtlasSize_min; //how big the atles is if shadowmap sizes were ideal
+			if ( atlasSize > s_depthBufferAtlasSize_max ) {
+				s_partitionSize = ( unsigned int )( ( float )s_depthBufferAtlasSize_max / mapsPerRow );
+				atlasSize = s_depthBufferAtlasSize_max;
+			}
+		}
+
+		s_depthBufferAtlas.CreateNewBuffer( atlasSize, atlasSize, "debug_quad" );
+		glDrawBuffer( GL_NONE ); //needed since there is no need for a color attachement
+		glReadBuffer( GL_NONE ); //needed since there is no need for a color attachement
+		s_depthBufferAtlas.AttachTextureBuffer( GL_DEPTH_COMPONENT, GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT, GL_FLOAT );
+		assert( s_depthBufferAtlas.Status() );
+		s_depthBufferAtlas.Unbind();
+		s_depthBufferAtlas.CreateScreen( 0, 0, 512, 512 );
+
+		//set the boundary outside the texture border to a specific border color (white)
+		glBindTexture( GL_TEXTURE_2D, s_depthBufferAtlas.m_attachements[0] );
+		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER );
+		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER );
+		float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+		glTexParameterfv( GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor );
+		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE );
+		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL );
+		glBindTexture( GL_TEXTURE_2D, 0 );
 	}
 }
-
-/*
-================================
-Light::Light
-================================
-*/
-Light::Light( Vec3 pos ) {
-	m_position = pos;
-	m_color = Vec3( 1.0 );
-	m_shadowCaster = false;
-	m_near_plane = 0.1f;
-	m_far_plane = 7.5f;
-	m_depthBuffer = Framebuffer( "depthMap" );
-
-	if ( s_blankShadowMap == 0 ) {
-		s_blankShadowMap = CreateBlankShadowMapTexture( 512, 512 );
-		s_blankShadowCubeMap = CreateBlankShadowCubeMapTexture( 512, 512 );
-	}
-}
-
-/*
-================================
-Light::DrawDepthBuffer
-================================
-*/
-void Light::DrawDepthBuffer( const float * view, const float * projection ) {
-	//before drawing the texture to the buffer screen quad, the comparison mode used by shadow sampler needs to be disabled.
-	glBindTexture( GL_TEXTURE_2D, m_depthBuffer.m_attachements[0] );
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE );
-
-	m_depthBuffer.Draw( m_depthBuffer.m_attachements[0] );
-}
-
-/*
-================================
-Light::EnableShadows
-================================
-*/
-void Light::EnableShadows() {
-	//compile shader
-	m_depthShader = new Shader();
-	if( !m_depthShader->CompileShaderFromCSTR( s_depth_vshader_source, s_depth_fshader_source ) ){
-		delete m_depthShader;
-		return;
-	}
-	m_shadowCaster = true;
-
-	//configure depth map FBO
-	m_depthBuffer.CreateNewBuffer( 512, 512, "debug_quad" );
-    glDrawBuffer( GL_NONE ); //FBO cant be complete without color buffer. Since we dont need one, we use this command to override.
-    glReadBuffer( GL_NONE ); //same as above line
-	m_depthBuffer.AttachTextureBuffer( GL_DEPTH_COMPONENT, GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT, GL_FLOAT ); //since attached first, the texture buffer id is the first element in m_attachements.
-
-	//set the boundary outside the texture border to a specific border color
-	glBindTexture( GL_TEXTURE_2D, m_depthBuffer.m_attachements[0] );
-
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER );
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER );
-	float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	glTexParameterfv( GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor );
-
-	glBindTexture( GL_TEXTURE_2D, 0 );
-
-	assert( m_depthBuffer.Status() );
-	
-	m_depthBuffer.Unbind();
-}
-
-/*
-================================
-Light::EnableCompareMode
-	-shader uses sampler2DShadow where frag coord arg is a vec3 whose
-	-z-value is the float to compare against.
-================================
-*/
-void Light::EnableSamplerCompareMode() {
-	glBindTexture( GL_TEXTURE_2D, m_depthBuffer.m_attachements[0] );
-
-	//allows using sampler2DShadow as the sampler for the shadowmap texture
-    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE );
-    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL );
-}
-
-/*
-================================
-Light::DrawEnable
-================================
-*/
-void Light::DebugDrawSetup( std::string obj ) {
-	s_drawEnable = true; //enable debug drawing if everything went well
-
-	//compile shader
-	m_debugShader = new Shader();
-	if( !m_debugShader->CompileShaderFromCSTR( s_vshader_source, s_fshader_source ) ){
-		delete m_debugShader;
-		return;
-	}
-	m_debugShader->UseProgram();
-	m_debugShader->SetUniform3f( "color", 1, m_color.as_ptr() );
-	
-	//load light mesh
-	if ( !m_mesh.LoadOBJFromFile( obj.c_str() ) ) {
-		return;
-	}
-	m_mesh.LoadVAO( 0 ); //only load first surface since we assume these debug models only have one	
-}
-
-/*
-================================
-Light::DebugDrawEnable
-	-Initializes debug model and quad to draw shadow depth buffer
-================================
-*/
-void Light::DebugDrawEnable() {
-	DebugDrawSetup( "data\\model\\light.obj" );
-	m_depthBuffer.CreateScreen( 0, 0 );
-}
-
 
 /*
 ================================
 Light::DebugDraw
-	-Draws light at constant size by denamically scaling it.
+	-Draws debug light model and depth shadow atlas
 ================================
 */
 void Light::DebugDraw( Camera * camera, const float * view, const float * projection ) {
-	if ( s_drawEnable ) {
-		m_debugShader->UseProgram();
+	assert(  s_depthBufferAtlas.GetID() != 0 );
 
-		//calculate model matrix
-		Mat4 translation = Mat4();
-		translation.Translate( m_position );
+	//***********************
+	//Render debug light model
+	//***********************
+	//calculate model matrix
+	Mat4 translation = Mat4();
+	translation.Translate( m_position );
 
-		Vec3 camToLight = ( camera->m_position - m_position );
-		float dist = camToLight.length() * 0.05f;
+	Vec3 camToLight = ( camera->m_position - m_position );
+	float dist = camToLight.length() * 0.05f;
 
-		Mat4 scale = Mat4();
-		for ( int i = 0; i < 3; i++ ) {
-			scale[i][i] = dist;
-		}
-
-		Mat4 model = translation * scale;
-
-		//pass uniforms to shader
-		m_debugShader->SetUniformMatrix4f( "view", 1, false, view );
-		m_debugShader->SetUniformMatrix4f( "model", 1, false, model.as_ptr() );
-		m_debugShader->SetUniformMatrix4f( "projection", 1, false, projection );		
-		
-		//render debug light model
-		glBindVertexArray( m_mesh.m_surfaces[0]->VAO );
-		glDrawElements( GL_TRIANGLES, m_mesh.m_surfaces[0]->triCount * 3, GL_UNSIGNED_INT, 0 );
+	Mat4 scale = Mat4();
+	for ( int i = 0; i < 3; i++ ) {
+		scale[i][i] = dist;
 	}
-}
 
-/*
-================================
-Light::BindDepthBuffer
-================================
-*/
-void Light::BindDepthBuffer() {
-	m_depthBuffer.Bind();
-	glClear( GL_DEPTH_BUFFER_BIT );
-}
+	Vec3 axis = Vec3( 1.0, 0.0, 0.0 );
+	Vec3 crossVec = axis.cross( m_direction );
+	if( crossVec.length() <= EPSILON ) {
+		axis = Vec3( 1.0f, 1.0f, 0.0f );
+		axis.normalize();
+		crossVec = axis.cross( m_direction );
+		crossVec.normalize();
+	}
+	Mat4 rotation = Mat4();
+	if ( TypeIndex() != 3 ) { //point light
+		rotation[0] = Vec4( crossVec, 0.0 );
+		rotation[1] = Vec4( m_direction, 0.0 );
+		rotation[2] = Vec4( m_direction.cross( crossVec ).normal(), 0.0 );
+		rotation[3] = Vec4( 0.0, 0.0, 0.0, 1.0 );
+	}
+		
+	const Mat4 model = translation * rotation * scale;
 
-/*
-================================
-Light::PassUniforms
-================================
-*/
-void Light::PassUniforms( Shader * shader ) {
-	const int typeIndex = 0;
-	shader->SetUniform1i( "light.typeIndex", 1, &typeIndex );
-	shader->SetUniform3f( "light.position", 1, m_position.as_ptr() );
-	shader->SetUniform3f( "light.color", 1, m_color.as_ptr() );
-	const int shadow = 0;
-	shader->SetUniform1i( "light.shadow", 1, &shadow );
-}
+	//pass uniforms to shader
+	s_debugShader->UseProgram();
+	s_debugShader->SetUniformMatrix4f( "view", 1, false, view );
+	s_debugShader->SetUniformMatrix4f( "model", 1, false, model.as_ptr() );
+	s_debugShader->SetUniformMatrix4f( "projection", 1, false, projection );
+	s_debugShader->SetUniform3f( "color", 1, m_color.as_ptr() );
+		
+	//render debug light model
+	Mesh * debugModel = GetDebugMesh();
+	glBindVertexArray( debugModel->m_surfaces[0]->VAO );
+	glDrawElements( GL_TRIANGLES, debugModel->m_surfaces[0]->triCount * 3, GL_UNSIGNED_INT, 0 );
 
-/*
-================================
-Light::CreateBlankShadowMapTexture
-================================
-*/
-unsigned int Light::CreateBlankShadowMapTexture( unsigned int width, unsigned int height ) {
-	unsigned int texBuffer;
-	glGenTextures( 1, &texBuffer );
-	glBindTexture( GL_TEXTURE_2D, texBuffer );
-	glTexImage2D( GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, width, height, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL );
-	
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER );
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER );
 
-	float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	glTexParameterfv( GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor );
-
+	//***********************
+	//Render depth atlas
+	//***********************
+	//before drawing the texture to the buffer screen quad, the comparison mode used by shadow sampler needs to be disabled.
+	glActiveTexture( GL_TEXTURE0 );
+	glBindTexture( GL_TEXTURE_2D, s_depthBufferAtlas.m_attachements[0] );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE );
 	glBindTexture( GL_TEXTURE_2D, 0 );
 
-	return texBuffer;
+	//draw depth attachement to a quad on the screen
+	s_depthBufferAtlas.Draw( s_depthBufferAtlas.m_attachements[0] );
 }
 
 /*
 ================================
-Light::CreateBlankShadowCubeMapTexture
+Light::UpdateDepthBuffer
+	-render the depth of the scene to lights piece of the depthbuffer
 ================================
 */
-unsigned int Light::CreateBlankShadowCubeMapTexture( unsigned int width, unsigned int height ) {
-	unsigned int texBuffer;
-	glGenTextures( 1, &texBuffer );
-	glBindTexture( GL_TEXTURE_CUBE_MAP, texBuffer );
+void Light::UpdateDepthBuffer( Scene * scene ) {
+	assert(  s_depthBufferAtlas.GetID() != 0 );
 
-	for ( unsigned int i = 0; i < 6; i++ ) {
-		glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_DEPTH_COMPONENT, width, height, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL );
+	s_depthBufferAtlas.Bind();
+	if ( m_shadowIndex == 0 ) {
+		glClear( GL_DEPTH_BUFFER_BIT ); //Clear previous frame values
 	}
 
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE );
+	s_depthShader->UseProgram();
+	s_depthShader->SetUniformMatrix4f( "lightSpaceMatrix", 1, false, LightMatrix() );
 
-	glBindTexture( GL_TEXTURE_CUBE_MAP, 0 );
+	//set rendering for this light's portion of the depthBufferAtlas
+	const float mapsPerRow = ceil( sqrt( ( float )s_shadowCastingLightCount ) );
+	float currentRow = floor( ( float )m_shadowIndex / mapsPerRow );
+	unsigned int stepsUp = ( unsigned int )currentRow;
+	unsigned int stepsRight = m_shadowIndex - ( unsigned int )( mapsPerRow * currentRow );
+	glViewport( stepsRight * s_partitionSize, stepsUp * s_partitionSize, s_partitionSize, s_partitionSize );
 
-	return texBuffer;
+	//store the position of this shadowMap in the shadowMapAtlas
+	float x = ( float )stepsRight / ( float )mapsPerRow;
+	float y = ( float )stepsUp / ( float )mapsPerRow;
+	m_PosInShadowAtlas = Vec2( x, y );
+
+	//iterate through each surface of each mesh in the scene and render it with m_depthShader active
+	for ( int i = 0; i < scene->MeshCount(); i++ ) {			
+		Mesh * mesh = NULL;
+		scene->MeshByIndex( i, &mesh );
+		for ( unsigned int j = 0; j < mesh->m_surfaces.size(); j++ ) {
+			mesh->DrawSurface( j );
+		}
+	}
+
+	s_depthBufferAtlas.Unbind();
+}
+
+/*
+================================
+Light::SetShadows
+================================
+*/
+void Light::SetShadow( const bool shadowCasting ) {	
+	if ( shadowCasting && !m_shadowCaster ) {
+		//give shadowcasting lights an index in the atlas
+		m_shadowIndex = ( int )s_shadowCastingLightCount;
+		s_shadowCastingLightCount += 1;
+	} else if ( !shadowCasting && m_shadowCaster ) {
+		m_shadowIndex = -1;
+		s_shadowCastingLightCount -= 1;
+	}
+	m_shadowCaster = shadowCasting;
+}
+
+/*
+================================
+Light::PassDepthAttribute
+	-Pass depth buffer to arg shader
+================================
+*/
+void Light::PassDepthAttribute( Shader* shader, const unsigned int slot ) const {
+	glActiveTexture( GL_TEXTURE0 + slot );
+	glBindTexture( GL_TEXTURE_2D, s_depthBufferAtlas.m_attachements[0] );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE );
+	glBindTexture( GL_TEXTURE_2D, 0 );
+
+	shader->SetAndBindUniformTexture( "shadowAtlas", slot, GL_TEXTURE_2D, s_depthBufferAtlas.m_attachements[0] );
+}
+
+/*
+================================
+DirectionalLight::DirectionalLight
+================================
+*/
+DirectionalLight::DirectionalLight() {
+	if ( s_debugModel_directional.m_name.Initialized() ) {
+		s_debugModel_directional.LoadOBJFromFile( "data\\model\\system\\light\\directionalLight.obj" );
+		s_debugModel_directional.LoadVAO( 0 );
+	}
 }
 
 /*
 ================================
 DirectionalLight::LightMatrix
-	-returns a light space transformation matrix that transforms each
-	-world-space vector into the space as visible from the light source
+	-update light matrix member and return pointer to it
 ================================
 */
 const float * DirectionalLight::LightMatrix() {
-	Mat4 lightProjection = Mat4();
-	lightProjection.Orthographic( -1.0f, 1.0f, -1.0f, 1.0f, m_near_plane, m_far_plane );
+	//set up orthographic projection
+	Mat4 projection = Mat4();
+	projection.Orthographic( -1.0f, 1.0f, -1.0f, 1.0f, m_near_plane, m_far_plane );
 
+	//set up view matrix
 	Vec3 up = Vec3( 0.0f, 1.0f, 0.0f );
 	Vec3 right = m_direction.cross( up );
 	if ( right.length() <= EPSILON ) {
@@ -312,72 +301,13 @@ const float * DirectionalLight::LightMatrix() {
 	}
 	up = right.cross( m_direction );
 	Vec3 eye = m_position + m_direction;
-	Mat4 lightView = Mat4();
-	lightView.LookAt( m_position, eye, up );
+	Mat4 view = Mat4();
+	view.LookAt( m_position, eye, up );
 
-	m_xfrm = lightProjection * lightView;
+	//update member
+	m_xfrm = projection * view;
 
 	return m_xfrm.as_ptr();
-}
-
-/*
-================================
-DirectionalLight::DebugDrawEnable
-	-Initializes debug model and quad to draw shadow depth buffer
-================================
-*/
-void DirectionalLight::DebugDrawEnable() {
-	DebugDrawSetup( "data\\model\\directionalLight.obj" );
-	m_depthBuffer.CreateScreen( 0, 0 );
-}
-
-/*
-================================
-DirectionalLight::DirectionalLight
-	-Draws light at constant size by dynamically scaling it.
-================================
-*/
-void DirectionalLight::DebugDraw( Camera * camera, const float * view, const float * projection ) {
-	if ( s_drawEnable ) {
-		m_debugShader->UseProgram();
-
-		//calculate model matrix
-		Mat4 translation = Mat4();
-		translation.Translate( m_position );
-
-		Vec3 camToLight = ( camera->m_position - m_position );
-		float dist = camToLight.length() * 0.05f;
-
-		Mat4 scale = Mat4();
-		for ( int i = 0; i < 3; i++ ) {
-			scale[i][i] = dist;
-		}
-
-		Vec3 axis = Vec3( 1.0, 0.0, 0.0 );
-		Vec3 crossVec = axis.cross( m_direction );
-		if( crossVec.length() <= EPSILON ) {
-			axis = Vec3( 1.0f, 1.0f, 0.0f );
-			axis.normalize();
-			crossVec = axis.cross( m_direction );
-			crossVec.normalize();
-		}
-		Mat4 rotation = Mat4( 1.0 );
-		rotation[0] = Vec4( crossVec, 0.0 );
-		rotation[1] = Vec4( m_direction, 0.0 );
-		rotation[2] = Vec4( m_direction.cross( crossVec ).normal(), 0.0 );
-		rotation[3] = Vec4( 0.0, 0.0, 0.0, 1.0 );
-		
-		Mat4 model = translation * rotation * scale;
-
-		//pass uniforms to shader
-		m_debugShader->SetUniformMatrix4f( "view", 1, false, view );
-		m_debugShader->SetUniformMatrix4f( "model", 1, false, model.as_ptr() );
-		m_debugShader->SetUniformMatrix4f( "projection", 1, false, projection );		
-		
-		//render debug light model
-		glBindVertexArray( m_mesh.m_surfaces[0]->VAO );
-		glDrawElements( GL_TRIANGLES, m_mesh.m_surfaces[0]->triCount * 3, GL_UNSIGNED_INT, 0 );
-	}
 }
 
 /*
@@ -385,63 +315,59 @@ void DirectionalLight::DebugDraw( Camera * camera, const float * view, const flo
 DirectionalLight::PassUniforms
 ================================
 */
-void DirectionalLight::PassUniforms( Shader * shader ) {
-	const int typeIndex = 1;
-	shader->SetUniform1i( "light.typeIndex", 1, &typeIndex );
-	shader->SetUniform3f( "light.direction", 1, m_direction.as_ptr() );
-	shader->SetUniform3f( "light.color", 1, m_color.as_ptr() );
-	const int shadow = ( int )m_shadowCaster;
-	shader->SetUniform1i( "light.shadow", 1, &shadow );
-	if ( m_shadowCaster ) {
-		shader->SetUniformMatrix4f( "light.matrix", 1, false, m_xfrm.as_ptr() ); //pass light view matrix
-		shader->SetAndBindUniformTexture( "light.shadowMap", 4, GL_TEXTURE_2D, m_depthBuffer.m_attachements[0] );
-	} else {
-		shader->SetAndBindUniformTexture( "light.shadowMap", 4, GL_TEXTURE_2D, s_blankShadowMap );
+void DirectionalLight::PassUniforms( Shader * shader, int idx ) const {
+	char str[16];
+	sprintf( str, "lights[%d].", idx );
+	Str structPrefix = Str( str );
+
+	const int typeIndex = ( int )( TypeIndex() );
+	const float temp = 0.0f;
+	const int shadowIdx = GetShadowIndex();
+
+	shader->SetUniform1i( ( structPrefix + Str( "typeIndex" ) ).c_str(), 1, &typeIndex );
+	shader->SetUniform3f( ( structPrefix + Str( "position" ) ).c_str(), 1, m_position.as_ptr() );
+	shader->SetUniform3f( ( structPrefix + Str( "color" ) ).c_str(), 1, m_color.as_ptr() );
+	shader->SetUniform3f( ( structPrefix + Str( "direction" ) ).c_str(), 1, m_direction.as_ptr() );	
+	shader->SetUniform1f( ( structPrefix + Str( "angle" ) ).c_str(), 1, &temp ); //not needed
+	shader->SetUniform1f( ( structPrefix + Str( "radius" ) ).c_str(), 1, &m_radius );
+	shader->SetUniform1i( ( structPrefix + Str( "shadowIdx" ) ).c_str(), 1, &shadowIdx );
+
+	if ( m_shadowIndex > -1 ) {
+		char str2[16];
+		sprintf( str2, "shadows[%d].", m_shadowIndex );
+		Str shadowStructPrefix = Str( str2 );
+		shader->SetUniformMatrix4f( ( shadowStructPrefix + Str( "matrix" ) ).c_str(), 1, false, m_xfrm.as_ptr() );
+		shader->SetUniform2f( ( shadowStructPrefix + Str( "loc" ) ).c_str(), 1, m_PosInShadowAtlas.as_ptr() );
 	}
-	shader->SetAndBindUniformTexture( "light.shadowCubeMap", 5, GL_TEXTURE_CUBE_MAP, s_blankShadowCubeMap );
 }
 
 /*
 ================================
-SpotLight::SpotLight
+DirectionalLight::DirectionalLight
 ================================
 */
 SpotLight::SpotLight() {
-	m_direction = Vec3( 1.0, 0.0, 0.0 );	
+	if ( s_debugModel_spot.m_name.Initialized() ) {
+		s_debugModel_spot.LoadOBJFromFile( "data\\model\\system\\light\\spotLight.obj" );
+		s_debugModel_spot.LoadVAO( 0 );
+	}
 	m_radius = 4.0;
 	m_angle = to_radians( 90.0f );
-
-}
-
-/*
-================================
-SpotLight::SpotLight
-================================
-*/
-SpotLight::SpotLight( Vec3 pos, Vec3 dir, float degrees, float radius ) {
-	m_position = pos;
-	m_direction = dir;
-	m_radius = radius;
-
-	if( degrees < 170.0 ) {
-		m_angle = to_radians( degrees );
-	} else {
-		m_angle = to_radians( 169.0f );
-	}
 }
 
 /*
 ================================
 SpotLight::LightMatrix
-	-returns a light space transformation matrix that transforms each
-	-world-space vector into the space as visible from the light source
+	-update light matrix member and return pointer to it
 ================================
 */
 const float * SpotLight::LightMatrix() {
+	//set up perspective projection
 	const float aspect = 1.0f;
-	Mat4 lightProjection = Mat4();
-	lightProjection.Perspective( m_angle, aspect, m_near_plane, m_far_plane );
+	Mat4 projection = Mat4();
+	projection.Perspective( m_angle, aspect, m_near_plane, m_far_plane );
 
+	//set up view matrix
 	Vec3 up = Vec3( 0.0f, 1.0f, 0.0f );
 	Vec3 right = m_direction.cross( up );
 	if ( right.length() <= EPSILON ) {
@@ -450,75 +376,13 @@ const float * SpotLight::LightMatrix() {
 	}
 	up = right.cross( m_direction );
 	Vec3 eye = m_position + m_direction;
-	Mat4 lightView = Mat4();
-	lightView.LookAt( m_position, eye, up );
+	Mat4 view = Mat4();
+	view.LookAt( m_position, eye, up );
 
-	m_xfrm = lightProjection * lightView;
+	//update member
+	m_xfrm = projection * view;
 
 	return m_xfrm.as_ptr();
-}
-
-/*
-================================
-SpotLight::DebugDrawEnable
-	-Initializes debug model and quad to draw shadow depth buffer
-================================
-*/
-void SpotLight::DebugDrawEnable() {
-	DebugDrawSetup( "data\\model\\spotLight.obj" );
-	m_depthBuffer.CreateScreen( 0, 0 );
-}
-
-/*
-================================
-SpotLight::DebugDraw
-================================
-*/
-void SpotLight::DebugDraw( Camera * camera, const float * view, const float * projection ) {
-	if ( s_drawEnable ) {
-		m_debugShader->UseProgram();
-
-		//calculate model matrix
-		Mat4 translation = Mat4();
-		translation.Translate( m_position );
-
-		Vec3 camToLight = ( camera->m_position - m_position );
-		float dist = camToLight.length() * 0.05f;
-
-
-		float obj_angle = to_radians( 45.0f );
-		float scaleFactor = m_angle / obj_angle;
-		Vec3 scaleVec = Vec3( scaleFactor * dist, dist, scaleFactor * dist );
-		Mat4 scale = Mat4();
-		for ( int i = 0; i < 3; i++ ) {
-			scale[i][i] = scaleVec[i];
-		}
-
-		Vec3 axis = Vec3( 1.0, 0.0, 0.0 );
-		Vec3 crossVec = axis.cross( m_direction );
-		if( crossVec.length() <= EPSILON ) {
-			axis = Vec3( 1.0f, 1.0f, 0.0f );
-			axis.normalize();
-			crossVec = axis.cross( m_direction );
-			crossVec.normalize();
-		}
-		Mat4 rotation = Mat4( 1.0 );
-		rotation[0] = Vec4( crossVec, 0.0 );
-		rotation[1] = Vec4( m_direction, 0.0 );
-		rotation[2] = Vec4( m_direction.cross( crossVec ).normal(), 0.0 );
-		rotation[3] = Vec4( 0.0, 0.0, 0.0, 1.0 );
-
-		Mat4 model = translation * rotation * scale;
-
-		//pass uniforms to shader
-		m_debugShader->SetUniformMatrix4f( "view", 1, false, view );
-		m_debugShader->SetUniformMatrix4f( "model", 1, false, model.as_ptr() );
-		m_debugShader->SetUniformMatrix4f( "projection", 1, false, projection );		
-		
-		//render debug light model
-		glBindVertexArray( m_mesh.m_surfaces[0]->VAO );
-		glDrawElements( GL_TRIANGLES, m_mesh.m_surfaces[0]->triCount * 3, GL_UNSIGNED_INT, 0 );
-	}
 }
 
 /*
@@ -526,24 +390,30 @@ void SpotLight::DebugDraw( Camera * camera, const float * view, const float * pr
 SpotLight::PassUniforms
 ================================
 */
-void SpotLight::PassUniforms( Shader * shader ) {
-	const int typeIndex = 2;
-	const float lightAngle_cosine = cos( m_angle / 2.0f );
-	shader->SetUniform1i( "light.typeIndex", 1, &typeIndex );
-	shader->SetUniform3f( "light.position", 1, m_position.as_ptr() );
-	shader->SetUniform3f( "light.direction", 1, m_direction.as_ptr() );
-	shader->SetUniform3f( "light.color", 1, m_color.as_ptr() );
-	shader->SetUniform1f( "light.angle", 1, &lightAngle_cosine ); //passing in cosine so we dont have to do it in the fragment shader
-	shader->SetUniform1f( "light.radius", 1, &m_radius );
-	const int shadow = ( int )m_shadowCaster;
-	shader->SetUniform1i( "light.shadow", 1, &shadow );
-	if ( m_shadowCaster ) {
-		shader->SetUniformMatrix4f( "light.matrix", 1, false, m_xfrm.as_ptr() ); //pass light view matrix
-		shader->SetAndBindUniformTexture( "light.shadowMap", 4, GL_TEXTURE_2D, m_depthBuffer.m_attachements[0] );
-	} else {
-		shader->SetAndBindUniformTexture( "light.shadowMap", 4, GL_TEXTURE_2D, s_blankShadowMap );
+void SpotLight::PassUniforms( Shader * shader, int idx ) const {
+	char str[16];
+	sprintf( str, "lights[%d].", idx );
+	Str structPrefix = Str( str );
+
+	const int typeIndex = ( int )( TypeIndex() );
+	const float lightAngle_cosine = cos( m_angle / 2.0f ); //passing in cos so we dont have to do it in the fragment shader
+	const int shadowIdx = GetShadowIndex();
+
+	shader->SetUniform1i( ( structPrefix + Str( "typeIndex" ) ).c_str(), 1, &typeIndex );
+	shader->SetUniform3f( ( structPrefix + Str( "position" ) ).c_str(), 1, m_position.as_ptr() );
+	shader->SetUniform3f( ( structPrefix + Str( "color" ) ).c_str(), 1, m_color.as_ptr() );
+	shader->SetUniform3f( ( structPrefix + Str( "direction" ) ).c_str(), 1, m_direction.as_ptr() );
+	shader->SetUniform1f( ( structPrefix + Str( "angle" ) ).c_str(), 1, &lightAngle_cosine );
+	shader->SetUniform1f( ( structPrefix + Str( "radius" ) ).c_str(), 1, &m_radius );	
+	shader->SetUniform1i( ( structPrefix + Str( "shadowIdx" ) ).c_str(), 1, &shadowIdx );
+
+	if ( m_shadowIndex > -1 ) {
+		char str2[16];
+		sprintf( str2, "shadows[%d].", m_shadowIndex );
+		Str shadowStructPrefix = Str( str2 );
+		shader->SetUniformMatrix4f( ( shadowStructPrefix + Str( "matrix" ) ).c_str(), 1, false, m_xfrm.as_ptr() );
+		shader->SetUniform2f( ( shadowStructPrefix + Str( "loc" ) ).c_str(), 1, m_PosInShadowAtlas.as_ptr() );
 	}
-	shader->SetAndBindUniformTexture( "light.shadowCubeMap", 5, GL_TEXTURE_CUBE_MAP, s_blankShadowCubeMap );
 }
 
 /*
@@ -552,77 +422,124 @@ PointLight::PointLight
 ================================
 */
 PointLight::PointLight() {
-	m_radius = 1.0;
-	m_shadowFaceIdx = 0;
-	m_depthBuffer.SetColorBufferUniform( "cubemap" ); //change depthmap uniform name to cubemap
-}
-
-/*
-================================
-PointLight::PointLight
-================================
-*/
-PointLight::PointLight( Vec3 pos, float radius ) {
-	m_position = pos;
-	m_radius = radius;
-	m_shadowFaceIdx = 0;
-	m_depthBuffer.SetColorBufferUniform( "cubemap" ); //change depthmap uniform name to cubemap
-}
-
-/*
-================================
-PointLight::DebugDrawEnable
-	-Initializes debug model and quad to draw shadow depth buffer
-================================
-*/
-void PointLight::DebugDrawEnable() {
-	DebugDrawSetup( "data\\model\\light.obj" );
-	m_depthCubeView.CreateScreen( 0, 0 );
-}
-
-/*
-================================
-PointLight::PassDepthShaderUniforms
-================================
-*/
-void PointLight::PassDepthShaderUniforms() {
-	m_depthShader->SetUniformMatrix4f( "lightSpaceMatrix", 1, false, LightMatrix() );
-	m_depthShader->SetUniform1f( "far_plane", 1, &m_far_plane );
-	m_depthShader->SetUniform3f( "lightPos", 1, m_position.as_ptr() );
-}
-
-/*
-================================
-PointLight::DebugDraw
-	-Draws light at constant size by denamically scaling it.
-================================
-*/
-void PointLight::DebugDraw( Camera * camera, const float * view, const float * projection ) {
-	if ( s_drawEnable ) {
-		m_debugShader->UseProgram();
-
-		//calculate model matrix
-		Mat4 translation = Mat4();
-		translation.Translate( m_position );
-
-		Vec3 camToLight = ( camera->m_position - m_position );
-		float dist = camToLight.length() * 0.05f;
-		Mat4 scale = Mat4();
-		for ( int i = 0; i < 3; i++ ) {
-			scale[i][i] = dist;
-		}
-
-		Mat4 model = translation * scale;
-
-		//pass uniforms to shader
-		m_debugShader->SetUniformMatrix4f( "view", 1, false, view );
-		m_debugShader->SetUniformMatrix4f( "model", 1, false, model.as_ptr() );
-		m_debugShader->SetUniformMatrix4f( "projection", 1, false, projection );		
-		
-		//render debug light model
-		glBindVertexArray( m_mesh.m_surfaces[0]->VAO );
-		glDrawElements( GL_TRIANGLES, m_mesh.m_surfaces[0]->triCount * 3, GL_UNSIGNED_INT, 0 );
+	if ( s_debugModel_point.m_name.Initialized() ) {
+		s_debugModel_point.LoadOBJFromFile( "data\\model\\system\\light\\light.obj" );
+		s_debugModel_point.LoadVAO( 0 );
 	}
+	m_radius = 4.0;
+}
+
+/*
+================================
+PointLight::SetShadow
+================================
+*/
+void PointLight::SetShadow( const bool shadowCasting ) {	
+	if ( shadowCasting && !m_shadowCaster ) {
+		//give shadowcasting lights an index in the atlas
+		m_shadowIndex = ( int )s_shadowCastingLightCount;
+		s_shadowCastingLightCount += 6;
+	} else if ( !shadowCasting && m_shadowCaster ) {
+		m_shadowIndex = -1;
+		s_shadowCastingLightCount -= 6;
+	}
+	m_shadowCaster = shadowCasting;
+}
+
+/*
+================================
+PointLight::LightMatrix
+================================
+*/
+const float * PointLight::LightMatrix() {
+	//set up perspective projection
+	const float aspect = 1.0f;
+	Mat4 projection = Mat4();
+	projection.Perspective( to_radians( 91.0f ), aspect, m_near_plane, m_far_plane );
+
+	Vec3 dirs[6];
+	dirs[0] = Vec3( 1.0f, 0.0f, 0.0f );
+	dirs[1] = Vec3( 0.0f, 0.0f, 1.0f );
+	dirs[2] = Vec3( -1.0f, 0.0f, 0.0f );
+	dirs[3] = Vec3( 0.0f, 0.0f, -1.0f );
+	dirs[4] = Vec3( 0.0f, 1.0f, 0.0f );
+	dirs[5] = Vec3( 0.0f, -1.0f, 0.0f );
+
+	for ( unsigned int i = 0; i < 6; i++ ) {
+		//set up view matrix
+		Vec3 up = Vec3( 0.0f, 1.0f, 0.0f );
+		Vec3 right = dirs[i].cross( up );
+		if ( right.length() <= EPSILON ) {
+			up = Vec3( 1.0f, 0.0f, 0.0f );
+			right = dirs[i].cross( up );
+		}
+		up = right.cross( dirs[i] );
+		Vec3 eye = m_position + dirs[i];
+		Mat4 view = Mat4();
+		view.LookAt( m_position, eye, up );
+
+		//update member
+		m_xfrms[i] = projection * view;
+	}
+
+	return m_xfrms[0].as_ptr();
+}
+
+/*
+================================
+PointLight::UpdateDepthBuffer
+	-render the depth of the scene to lights piece of the depthbuffer
+================================
+*/
+void PointLight::UpdateDepthBuffer( Scene * scene ) {
+	assert(  s_depthBufferAtlas.GetID() != 0 );
+
+	s_depthBufferAtlas.Bind();
+	if ( m_shadowIndex == 0 ) {
+		glClear( GL_DEPTH_BUFFER_BIT ); //Clear previous frame values
+	}
+
+	LightMatrix(); //update m_xfrms
+	for ( unsigned int i = 0; i < 6; i++ ) {
+		s_depthShader->UseProgram();
+		s_depthShader->SetUniformMatrix4f( "lightSpaceMatrix", 1, false, m_xfrms[i].as_ptr() );
+
+		//set rendering for this light's portion of the depthBufferAtlas
+		const unsigned int shadowIdx = m_shadowIndex + i;
+		const float mapsPerRow = ceil( sqrt( ( float )s_shadowCastingLightCount ) );
+		float currentRow = floor( ( float )shadowIdx / mapsPerRow );
+		unsigned int stepsDown = ( unsigned int )currentRow;
+		unsigned int stepsRight = shadowIdx - ( ( unsigned int )mapsPerRow * stepsDown );
+		glViewport( stepsRight * s_partitionSize, stepsDown * s_partitionSize, s_partitionSize, s_partitionSize );
+
+		//iterate through each surface of each mesh in the scene and render it with m_depthShader active
+		for ( int i = 0; i < scene->MeshCount(); i++ ) {			
+			Mesh * mesh = NULL;
+			scene->MeshByIndex( i, &mesh );
+			for ( unsigned int j = 0; j < mesh->m_surfaces.size(); j++ ) {
+				mesh->DrawSurface( j );
+			}
+		}
+	}
+
+	s_depthBufferAtlas.Unbind();
+}
+
+/*
+================================
+PointLight::GetShadowMapLoc
+================================
+*/
+const Vec2 PointLight::GetShadowMapLoc( unsigned int faceIdx ) const {
+	const unsigned int shadowIdx = m_shadowIndex + faceIdx;
+	const float mapsPerRow = ceil( sqrt( ( float )s_shadowCastingLightCount ) );
+	float currentRow = floor( ( float )shadowIdx / mapsPerRow );
+	unsigned int stepsUp = ( unsigned int )currentRow;
+	unsigned int stepsRight = shadowIdx - ( unsigned int )( mapsPerRow * currentRow );
+
+	float x = ( float )stepsRight / ( float )mapsPerRow;
+	float y = ( float )stepsUp / ( float )mapsPerRow;
+	return Vec2( x, y );
 }
 
 /*
@@ -630,209 +547,33 @@ void PointLight::DebugDraw( Camera * camera, const float * view, const float * p
 PointLight::PassUniforms
 ================================
 */
-void PointLight::PassUniforms( Shader * shader ) {
-	const int typeIndex = 3;
-	shader->SetUniform1i( "light.typeIndex", 1, &typeIndex );
-	shader->SetUniform3f( "light.position", 1, m_position.as_ptr() );
-	shader->SetUniform3f( "light.color", 1, m_color.as_ptr() );
-	shader->SetUniform1f( "light.radius", 1, &m_radius );
-	const int shadow = ( int )m_shadowCaster;
-	shader->SetUniform1i( "light.shadow", 1, &shadow );
-	shader->SetUniform1f( "light.far_plane", 1, &m_far_plane );
-	const Mat4 ident = Mat4( 1.0 );
-	shader->SetUniformMatrix4f( "light.matrix", 1, false, ident.as_ptr() );
-	shader->SetAndBindUniformTexture( "light.shadowMap", 4, GL_TEXTURE_2D, s_blankShadowMap );
-	if ( m_shadowCaster ) {
-		shader->SetAndBindUniformTexture( "light.shadowCubeMap", 5, GL_TEXTURE_CUBE_MAP, m_depthBuffer.m_attachements[0] );
-	} else {
-		shader->SetAndBindUniformTexture( "light.shadowCubeMap", 5, GL_TEXTURE_CUBE_MAP, s_blankShadowCubeMap );
-	}
-}
+void PointLight::PassUniforms( Shader * shader, int idx ) const {
+	char str[16];
+	sprintf( str, "lights[%d].", idx );
+	Str structPrefix = Str( str );
 
+	const int typeIndex = ( int )( TypeIndex() );
+	const float temp = 0.0f;
+	const int shadowIdx = GetShadowIndex();
 
-/*
-================================
-Light::BindDepthBuffer
-================================
-*/
-void PointLight::BindDepthBuffer() {
-	//bind depth buffer
-	m_depthBuffer.Bind();
+	shader->SetUniform1i( ( structPrefix + Str( "typeIndex" ) ).c_str(), 1, &typeIndex );
+	shader->SetUniform3f( ( structPrefix + Str( "position" ) ).c_str(), 1, m_position.as_ptr() );
+	shader->SetUniform3f( ( structPrefix + Str( "color" ) ).c_str(), 1, m_color.as_ptr() );
+	shader->SetUniform3f( ( structPrefix + Str( "direction" ) ).c_str(), 1, m_direction.as_ptr() );
+	shader->SetUniform1f( ( structPrefix + Str( "angle" ) ).c_str(), 1, &temp ); //not needed
+	shader->SetUniform1f( ( structPrefix + Str( "radius" ) ).c_str(), 1, &m_radius );	
+	shader->SetUniform1i( ( structPrefix + Str( "shadowIdx" ) ).c_str(), 1, &shadowIdx );
 
-	//increment which fact of the cubemap we are drawing to
-	m_shadowFaceIdx += 1;
-	if ( m_shadowFaceIdx > 5 ) {
-		m_shadowFaceIdx = 0;
-	}
-
-	//activate the cubemap face we are about to draw to	
-	glFramebufferTexture2D( GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_CUBE_MAP_POSITIVE_X + m_shadowFaceIdx, m_depthBuffer.m_attachements[0], 0 );
-	glClear( GL_DEPTH_BUFFER_BIT ); //clear depth buffer
-}
-
-/*
-================================
-PointLight::LightMatrix
-	-return the view matrix of a facet of the depthcube for the pointlight.
-================================
-*/
-const float * PointLight::LightMatrix() {
-	//initialize projection matrix
-	Mat4 shadowProj = Mat4();
-	shadowProj.Perspective( to_radians( 90.0f ), 1.0f, m_near_plane, m_far_plane );
-
-	Mat4 view = Mat4();
-	if ( m_shadowFaceIdx == 0 ) {
-		view.LookAt( m_position, m_position + Vec3( 1.0, 0.0, 0.0 ), Vec3( 0.0, -1.0, 0.0 ) );
-	} else if ( m_shadowFaceIdx == 1 ) {
-		view.LookAt( m_position, m_position + Vec3( -1.0, 0.0, 0.0 ), Vec3( 0.0, -1.0, 0.0 ) );		
-	} else if ( m_shadowFaceIdx == 2 ) {
-		view.LookAt( m_position, m_position + Vec3( 0.0, 1.0, 0.0 ), Vec3( 0.0, 0.0, 1.0 ) );
-	} else if ( m_shadowFaceIdx == 3 ) {
-		view.LookAt( m_position, m_position + Vec3( 0.0, -1.0, 0.0 ), Vec3( 0.0, 0.0, -1.0 ) );
-	} else if ( m_shadowFaceIdx == 4 ) {
-		view.LookAt( m_position, m_position + Vec3( 0.0, 0.0, 1.0 ), Vec3( 0.0, -1.0, 0.0 ) );
-	} else {
-		view.LookAt( m_position, m_position + Vec3( 0.0, 0.0, -1.0 ), Vec3( 0.0, -1.0, 0.0 ) );
-	}
-	m_xfrm = shadowProj * view;
-
-	return m_xfrm.as_ptr();
-}
-
-/*
-================================
-PointLight::DrawDepthBuffer
-	-Bind the depth cubemap and draw it on the debug skybox cube
-================================
-*/
-void PointLight::DrawDepthBuffer( const float * view, const float * projection ) {
-	//must remove translation from view matrix to keep it bound to camera
-	float skyBox_view[16] = { 0.0f };
-	for ( int i = 0; i < 16; ++i ) {
-		skyBox_view[i] = view[i];
-	}
-	skyBox_view[12] = 0.0f;
-	skyBox_view[13] = 0.0f;
-	skyBox_view[14] = 0.0f;
-	skyBox_view[15] = 1.0f;
-
-	//before drawing the texture to the buffer screen quad, the comparison mode used by shadow sampler needs to be disabled.
-	glBindTexture( GL_TEXTURE_CUBE_MAP, m_depthBuffer.m_attachements[0] );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_COMPARE_MODE, GL_NONE );
-
-	//draw the depth cubemap skybox to the m_depthCubeViewFBO render target using the skybox shader
-	glViewport( 0, 0, m_depthCubeView.GetWidth(), m_depthCubeView.GetHeight() );
-	m_depthCubeView.Bind();
-	Shader * depthCubeShader = m_depthBuffer.GetShader();
-	depthCubeShader->UseProgram();
-	depthCubeShader->SetUniformMatrix4f( "view", 1, false, skyBox_view );
-	depthCubeShader->SetUniformMatrix4f( "projection", 1, false, projection );
-	depthCubeShader->SetAndBindUniformTexture( "cubemap", 0, GL_TEXTURE_CUBE_MAP, m_depthBuffer.m_attachements[0] );
-	m_depthCube.DrawSurface( true ); //draw cube
-	m_depthCubeView.Unbind();
-
-	//draw the m_depthCubeView texture to a quad for rendering
-	glViewport( 0, 0, glutGet( GLUT_WINDOW_WIDTH ), glutGet( GLUT_WINDOW_HEIGHT ) );
-	m_depthCubeView.Draw( m_depthCubeView.m_attachements[0] );
-}
-
-/*
-================================
-PointLight::EnableShadows
-================================
-*/
-void PointLight::EnableShadows(){
-	//compile depth shader that will be applied to the entire scene
-	m_depthShader = m_depthShader->GetShader( "linearDepth" );
-	if ( m_depthShader == NULL ) {
-		return;
-	}
-	m_shadowCaster = true;
-
-	//configure depth map FBO that contains the depth cubemap
-	//it also contains the shader used render the cubemap to a texture in m_depthCubeView FBO given camera matrices
-	m_depthBuffer.CreateNewBuffer( 512, 512, "cubemap" );
-	m_depthBuffer.AttachCubeMapTextureBuffer( GL_DEPTH_COMPONENT, GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT, GL_FLOAT );
-    glDrawBuffer( GL_NONE ); //FBO cant be complete without color buffer. Since we dont need one, we use this command to override.
-    glReadBuffer( GL_NONE ); //FBO cant be complete without color buffer. Since we dont need one, we use this command to override.
-	assert( m_depthBuffer.Status() );
-	m_depthBuffer.Unbind();
-
-	//configure the FBO used to display the depth cubemap
-	//m_depthBuffer FBO will write to m_depthCubeView FBO once bound.
-	m_depthCubeView = Framebuffer( "screenTexture" );
-	m_depthCubeView.CreateDefaultBuffer( 512, 512 );
-	m_depthCubeView.AttachTextureBuffer();
-	assert( m_depthCubeView.Status() );
-	m_depthCubeView.CreateScreen();
-	m_depthCubeView.Unbind();
-
-	//compile shader used to display cubemap onto a 2d texture
-	m_depthCube = Cube( "" ); //create skybox geo that will get said shader
-}
-
-/*
-================================
-Light::PointLight
-	-shader uses sampler2DShadow where frag coord arg is a vec3 whose
-	-z-value is the float to compare against.
-================================
-*/
-void PointLight::EnableSamplerCompareMode() {
-	glBindTexture( GL_TEXTURE_CUBE_MAP, m_depthBuffer.m_attachements[0] );
-
-	//allows using shadowCubeMap as the sampler for the shadowmap texture
-    glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE );
-    glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL );
-}
-
-/*
-================================
-AmbientLight::DebugDraw
-	-Draws light at constant size by denamically scaling it.
-================================
-*/
-void AmbientLight::DebugDraw( Camera * camera, const float * view, const float * projection ) {
-	if ( s_drawEnable ) {
-		m_debugShader->UseProgram();
-
-		//calculate model matrix
-		Mat4 translation = Mat4();
-		translation.Translate( m_position );
-
-		Vec3 camToLight = ( camera->m_position - m_position );
-		float dist = camToLight.length() * 0.05f;
-		Mat4 scale = Mat4();
-		for ( int i = 0; i < 3; i++ ) {
-			scale[i][i] = dist;
+	if ( m_shadowIndex > -1 ) {
+		for ( unsigned int i = 0; i < 6; i++ ) {
+			char str2[16];
+			sprintf( str2, "shadows[%d].", m_shadowIndex + i );
+			Str shadowStructPrefix = Str( str2 );
+			shader->SetUniformMatrix4f( ( shadowStructPrefix + Str( "matrix" ) ).c_str(), 1, false, m_xfrms[i].as_ptr() );
+			const Vec2 loc = GetShadowMapLoc( i );
+			shader->SetUniform2f( ( shadowStructPrefix + Str( "loc" ) ).c_str(), 1, loc.as_ptr() );
 		}
-
-		Mat4 model = translation * scale;
-
-		//pass uniforms to shader
-		m_debugShader->SetUniformMatrix4f( "view", 1, false, view );
-		m_debugShader->SetUniformMatrix4f( "model", 1, false, model.as_ptr() );
-		m_debugShader->SetUniformMatrix4f( "projection", 1, false, projection );		
-		
-		//render debug light model
-		glBindVertexArray( m_mesh.m_surfaces[0]->VAO );
-		glDrawElements( GL_TRIANGLES, m_mesh.m_surfaces[0]->triCount * 3, GL_UNSIGNED_INT, 0 );
 	}
-}
-
-/*
-================================
-AmbientLight::PassUniforms
-================================
-*/
-void AmbientLight::PassUniforms( Shader * shader ) {
-	const int typeIndex = 4;
-	shader->SetUniform1i( "light.typeIndex", 1, &typeIndex );
-	shader->SetUniform1f( "light.ambient", 1, &m_strength );
-	shader->SetUniform3f( "light.color", 1, m_color.as_ptr() );
-	const int shadow = 0;
-	shader->SetUniform1i( "light.shadow", 1, &shadow );
 }
 
 /*
@@ -850,7 +591,6 @@ EnvProbe::EnvProbe() {
 		if ( !s_brdfIntegrationMap.InitFromFile( "data\\texture\\system\\brdfIntegrationLUT.hdr" ) ) {
 			assert( false );
 		}
-		s_ambientPass_shader = s_ambientPass_shader->GetShader( "ambientPass" );
 	}
 }
 
@@ -869,7 +609,6 @@ EnvProbe::EnvProbe( Vec3 pos ) {
 		if ( !s_brdfIntegrationMap.InitFromFile( "data\\texture\\system\\brdfIntegrationLUT.hdr" ) ) {
 			assert( false );
 		}
-		s_ambientPass_shader = s_ambientPass_shader->GetShader( "ambientPass" );
 	}
 }
 
@@ -946,29 +685,10 @@ bool EnvProbe::BuildProbe( unsigned int probeIdx ) {
 EnvProbe::PassUniforms
 ================================
 */
-bool EnvProbe::PassUniforms( Str materialDeclName ) {
-	MaterialDecl * matDecl = MaterialDecl::GetMaterialDecl( materialDeclName.c_str() );
-	if ( matDecl->m_shaderProg == "error" ) {
-		return false;
-	}
-
-	s_ambientPass_shader->UseProgram();
-	unsigned int slotCount = 0;
-
-	//bind model textures
-	textureMap::iterator it = matDecl->m_textures.begin();
-	while ( it != matDecl->m_textures.end() ) {
-		std::string uniformName = it->first;
-		Texture* texture = it->second;
-		s_ambientPass_shader->SetAndBindUniformTexture( uniformName.c_str(), slotCount, texture->GetTarget(), texture->GetName() );
-		slotCount++;
-		it++;
-	}
-	s_ambientPass_shader->SetAndBindUniformTexture( "irradianceMap", slotCount, m_irradianceMap.GetTarget(), m_irradianceMap.GetName() );
-	s_ambientPass_shader->SetAndBindUniformTexture( "prefilteredEnvMap", slotCount + 1, m_environmentMap.GetTarget(), m_environmentMap.GetName() );
-	s_ambientPass_shader->SetAndBindUniformTexture( "brdfLUT", slotCount + 2, s_brdfIntegrationMap.GetTarget(), s_brdfIntegrationMap.GetName() );
-
-	return true;
+void EnvProbe::PassUniforms( Shader* shader, unsigned int slot ) const {
+	shader->SetAndBindUniformTexture( "brdfLUT", slot, s_brdfIntegrationMap.GetTarget(), s_brdfIntegrationMap.GetName() );
+	shader->SetAndBindUniformTexture( "irradianceMap", slot + 1, m_irradianceMap.GetTarget(), m_irradianceMap.GetName() );
+	shader->SetAndBindUniformTexture( "prefilteredEnvMap", slot + 2, m_environmentMap.GetTarget(), m_environmentMap.GetName() );
 }
 
 /*
@@ -1023,75 +743,60 @@ std::vector< unsigned int > EnvProbe::RenderCubemaps( const unsigned int cubemap
 	glEnable( GL_BLEND );
 	
 	//render the scene
-	for ( int i = 0; i < scene->LightCount(); i++ ) {
-		Light * light = NULL;
+	Light * light = NULL;
+	for ( unsigned int i = 0; i < scene->LightCount(); i++ ) {
 		scene->LightByIndex( i, &light );
+		if ( light->GetShadow() ) {
+			light->UpdateDepthBuffer( scene );
+		}
+	}
 
-		//Create shadow map for shadowcasting lights
-		if ( light->m_shadowCaster ) {
-			//configure opengl to render the shadowmap
-			glViewport( 0, 0, light->m_depthBuffer.GetWidth(), light->m_depthBuffer.GetHeight() );
-			light->BindDepthBuffer();
+	//Draw the scene to the main buffer		
+	glViewport( 0, 0, cubemapSize, cubemapSize ); //Set the OpenGL viewport to be the entire size of the window
+	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE ); //Enabling color writing to the frame buffer
 
-			//render depth of scene to texture (from this lights perspective)
-			light->m_depthShader->UseProgram(); //use depth shader
-			light->EnableSamplerCompareMode();
-			light->PassDepthShaderUniforms(); //pass light matrix to depth shader and activate a face of the cubmap
+	for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
+		fbos[faceIdx].Bind(); //bind the framebuffer so all subsequent drawing is to it.
+		glClear( GL_DEPTH_BUFFER_BIT ); //clear only depth because we wanna keep skybox color
 
-			//iterate through each surface of each mesh in the scene and render it with m_depthShader active
-			for ( int n = 0; n < scene->MeshCount(); n++ ) {			
-				Mesh * mesh = NULL;
-				scene->MeshByIndex( n, &mesh );
-				for ( unsigned int j = 0; j < mesh->m_surfaces.size(); j++ ) {
+		MaterialDecl* matDecl;
+		for ( unsigned int i = 0; i < scene->MeshCount(); i++ ) {
+			Mesh * mesh = NULL;
+			scene->MeshByIndex( i, &mesh );
+
+			for ( unsigned int j = 0; j < mesh->m_surfaces.size(); j++ ) {
+				matDecl = MaterialDecl::GetMaterialDecl( mesh->m_surfaces[j]->materialName.c_str() );
+				matDecl->BindTextures();
+
+				//pass in camera data
+				matDecl->shader->SetUniformMatrix4f( "view", 1, false, views[faceIdx].as_ptr() );		
+				matDecl->shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
+				matDecl->shader->SetUniform3f( "camPos", 1, m_position.as_ptr() );
+
+				//exit early if this material is errored out
+				if ( matDecl->m_shaderProg == "error" ) {
 					mesh->DrawSurface( j ); //draw surface
-				}
-			}
-			light->m_depthBuffer.Unbind();
-		}
+					continue;
+				}				
 
-		//Draw the scene to the main buffer
-		
-		glViewport( 0, 0, cubemapSize, cubemapSize ); //Set the OpenGL viewport to be the entire size of the window
-		if ( i > 0 ) {
-			//subsequent lighting passes add their contributions now that the first one has set all initial depth values.
-			glBlendFunc( GL_ONE, GL_ONE );
-		}
-
-		for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
-			fbos[faceIdx].Bind(); //bind the framebuffer so all subsequent drawing is to it.
-			glClear( GL_DEPTH_BUFFER_BIT ); //clear only depth because we wanna keep skybox color
-
-			MaterialDecl* matDecl;
-			for ( int n = 0; n < scene->MeshCount(); n++ ) {
-				Mesh * mesh = NULL;
-				scene->MeshByIndex( n, &mesh );
-
-				for ( unsigned int j = 0; j < mesh->m_surfaces.size(); j++ ) {
-					matDecl = MaterialDecl::GetMaterialDecl( mesh->m_surfaces[j]->materialName.c_str() );
-					matDecl->BindTextures();
-
-					//pass in camera matrices
-					matDecl->shader->SetUniformMatrix4f( "view", 1, false, views[faceIdx].as_ptr() );		
-					matDecl->shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
-
-					//exit early if this material is errored out
-					if ( matDecl->m_shaderProg == "error" ) {
-						mesh->DrawSurface( j ); //draw surface
-						continue;
+				//pass lights data
+				for ( int k = 0; k < scene->LightCount(); k++ ) {
+					if ( k == 0 ) {
+						light->PassDepthAttribute( matDecl->shader, 4 );
+						const int shadowMapPartitionSize = ( unsigned int )( light->s_partitionSize );
+						matDecl->shader->SetUniform1i( "shadowMapPartitionSize", 1, &shadowMapPartitionSize );
 					}
-
-					//pass camera position
-					matDecl->shader->SetUniform3f( "camPos", 1, m_position.as_ptr() );
-
-					//pass lights data
-					light->PassUniforms( matDecl->shader );
-	
-					//draw surface
-					mesh->DrawSurface( j );
+					scene->LightByIndex( k, &light );
+					light->PassUniforms( matDecl->shader, k );
 				}
+				const int lightCount = ( int )( scene->LightCount() );
+				matDecl->shader->SetUniform1i( "lightCount", 1, &lightCount );				
+	
+				//draw surface
+				mesh->DrawSurface( j );
 			}
-			fbos[faceIdx].Unbind();
-		}		
+		}
+		fbos[faceIdx].Unbind();
 	}
 
 	//gather all texture ids from color attachments of the fbos

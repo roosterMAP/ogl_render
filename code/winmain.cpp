@@ -35,8 +35,97 @@ extern CVar * g_cvar_debugLighting;
 extern CVar * g_cvar_renderLightModels;
 extern CVar * g_cvar_showVertTransform;
 extern CVar * g_cvar_showEdgeHighlights;
+extern CVar * g_cvar_deferredRender;
 
 Scene * g_scene = Scene::getInstance(); //declare g_scene singleton
+
+Framebuffer gBufferFBO( "gNormal" ); //called gPosition because thats the 1st color buffer uniform. there are 3 others.
+Shader * gBuffer_shader = new Shader();
+Shader * gBuffer_debugShader = new Shader();
+Shader * deferredShading_shader = new Shader();
+
+bool InitGBuffer() {
+	if ( gBufferFBO.m_attachements.size() == 0 ) {
+		//init GBuffer FBO
+		gBufferFBO.Bind();
+		gBufferFBO.CreateNewBuffer( gScreenWidth, gScreenHeight, "gBuffer_debug" );
+		gBufferFBO.AttachTextureBuffer( GL_RGB16F, GL_COLOR_ATTACHMENT0, GL_RGB, GL_FLOAT ); //normal
+		gBufferFBO.AttachTextureBuffer( GL_RGBA, GL_COLOR_ATTACHMENT1, GL_RGBA, GL_UNSIGNED_BYTE ); //albedo + roughness
+		gBufferFBO.AttachTextureBuffer( GL_RGB, GL_COLOR_ATTACHMENT2, GL_RGB, GL_UNSIGNED_BYTE ); //specular
+		gBufferFBO.AttachTextureBuffer( GL_RGB16F, GL_COLOR_ATTACHMENT3, GL_RGB, GL_FLOAT ); //ibl
+		gBufferFBO.AttachTextureBuffer( GL_DEPTH_COMPONENT, GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT, GL_FLOAT ); //depth
+		gBufferFBO.DrawToMultipleBuffers(); //set multiple render targs
+		if( !gBufferFBO.Status() ) {
+			return false;
+		}		
+		gBufferFBO.CreateScreen();
+		gBufferFBO.Unbind();
+
+		//init GBuffer shader
+		gBuffer_shader = gBuffer_shader->GetShader( "gBuffer" );
+
+		//init deferredShading shader and bind textures
+		deferredShading_shader = gBuffer_shader->GetShader( "deferredShading" );
+		deferredShading_shader->UseProgram();
+		deferredShading_shader->SetAndBindUniformTexture( "gNormal", 0, GL_TEXTURE_2D, gBufferFBO.m_attachements[0] );
+		deferredShading_shader->SetAndBindUniformTexture( "gAlbedoRough", 1, GL_TEXTURE_2D, gBufferFBO.m_attachements[1] );
+		deferredShading_shader->SetAndBindUniformTexture( "gSpecular", 2, GL_TEXTURE_2D, gBufferFBO.m_attachements[2] );
+		deferredShading_shader->SetAndBindUniformTexture( "gIBL", 3, GL_TEXTURE_2D, gBufferFBO.m_attachements[3] );
+	}
+
+	return true;
+}
+
+bool RenderGBuffer( const float * view, const float * projection ) {
+	gBufferFBO.Bind(); //bind the framebuffer so all subsequent drawing is to it.
+	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE ); //Enabling color writing to the frame buffer
+	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT ); //Clear previous frame values
+	glViewport( 0, 0, gScreenWidth, gScreenHeight ); //Set the OpenGL viewport to be the entire size of the window
+
+	MaterialDecl* matDecl;
+	for ( int n = 0; n < g_scene->MeshCount(); n++ ) {
+		Mesh * mesh = NULL;
+		g_scene->MeshByIndex( n, &mesh );
+
+		for ( unsigned int j = 0; j < mesh->m_surfaces.size(); j++ ) {
+			matDecl = MaterialDecl::GetMaterialDecl( mesh->m_surfaces[j]->materialName.c_str() );
+
+			//exit early if this material is errored out
+			if ( matDecl->m_shaderProg == "error" ) {
+				continue;
+			}
+
+			//bind textures
+			gBuffer_shader->UseProgram();
+			unsigned int slotCount = 0;
+			textureMap::iterator it = matDecl->m_textures.begin();
+			while ( it != matDecl->m_textures.end() ) {
+				std::string uniformName = it->first;
+				Texture* texture = it->second;
+				gBuffer_shader->SetAndBindUniformTexture( uniformName.c_str(), slotCount, texture->GetTarget(), texture->GetName() );
+				slotCount++;
+				it++;
+			}
+
+			//pass in EnvProbe data
+			const EnvProbe * probe = mesh->GetProbe();
+			if ( probe != NULL ) {
+				probe->PassUniforms( gBuffer_shader, 4 );
+			}
+
+			//pass in camera matrices
+			gBuffer_shader->SetUniformMatrix4f( "view", 1, false, view );		
+			gBuffer_shader->SetUniformMatrix4f( "projection", 1, false, projection );
+			gBuffer_shader->SetUniform3f( "camPos", 1, camera.m_position.as_ptr() );
+
+			//draw surface
+			mesh->DrawSurface( j );
+		}
+	}
+	gBufferFBO.Unbind();
+
+	return true;
+}
 
 void RenderDebug( const float * view, const float * perspective, int mode ) {
 	//Draw the scene to the main buffer
@@ -163,121 +252,147 @@ void RenderWireframe( const float * view, const float * perspective, const float
 	mainFBO.Unbind();
 }
 
-void RenderScene( const float * view, const float * projection ) {
-	//configure opengl to draw the scene for this light
+void RenderDeferred( Mat4 view, Mat4 projection, const int debugRenderMode ) {
+	glDisable( GL_BLEND );
+
+	if ( !InitGBuffer() ) {
+		glEnable( GL_BLEND );
+		return;
+	}
+	RenderGBuffer( view.as_ptr(), projection.as_ptr() );
+
 	mainFBO.Bind(); //bind the framebuffer so all subsequent drawing is to it.
 	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE ); //Enabling color writing to the frame buffer
 	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT ); //Clear previous frame values
 
-	//debulLighting cvar
-	int debugRenderMode = 0;
-	if ( g_cvar_debugLighting->GetState() ) {
-		debugRenderMode = atoi( g_cvar_debugLighting->GetArgs().c_str() );
-	}
+	if( debugRenderMode > 0 ) {
+		Shader * gBuffer_debugShader = gBufferFBO.GetShader();
+		gBuffer_debugShader->UseProgram();
+		gBuffer_debugShader->SetAndBindUniformTexture( "gDepth", 0, GL_TEXTURE_2D, gBufferFBO.m_attachements[4] );
+		gBuffer_debugShader->SetAndBindUniformTexture( "gNormal", 1, GL_TEXTURE_2D, gBufferFBO.m_attachements[0] );
+		gBuffer_debugShader->SetAndBindUniformTexture( "gAlbedoRough", 2, GL_TEXTURE_2D, gBufferFBO.m_attachements[1] );
+		gBuffer_debugShader->SetAndBindUniformTexture( "gSpecular", 3, GL_TEXTURE_2D, gBufferFBO.m_attachements[2] );
+		gBuffer_debugShader->SetAndBindUniformTexture( "gIBL", 4, GL_TEXTURE_2D, gBufferFBO.m_attachements[3] );
+		gBuffer_debugShader->SetUniform1i( "mode", 1, &debugRenderMode );
+		gBuffer_debugShader->SetUniform1f( "near", 1, &( camera.m_near ) );
+		gBuffer_debugShader->SetUniform1f( "far", 1, &( camera.m_far ) );
 
-	if ( debugRenderMode != 6 ) {
-		//render the scene
+		//draw the FBO to the screen
+		glDisable( GL_DEPTH_TEST );
+		glBindVertexArray( gBufferFBO.GetScreenVAO() );
+		glDrawArrays( GL_QUADS, 0, 4 );
+		glEnable( GL_DEPTH_TEST );
+
+		mainFBO.Unbind();
+	} else {
+		glEnable( GL_BLEND );
+		//dont bother rendering anything if there are no lights
+		const int lightCount = ( int )( g_scene->LightCount() );
+		if ( lightCount < 1 ) {
+			glEnable( GL_BLEND );
+			return;
+		}
+
+		//pass uniforms to shader
+		deferredShading_shader->UseProgram();
+		deferredShading_shader->SetAndBindUniformTexture( "gDepth", 0, GL_TEXTURE_2D, gBufferFBO.m_attachements[4] );
+		deferredShading_shader->SetAndBindUniformTexture( "gNormal", 1, GL_TEXTURE_2D, gBufferFBO.m_attachements[0] );
+		deferredShading_shader->SetAndBindUniformTexture( "gAlbedoRough", 2, GL_TEXTURE_2D, gBufferFBO.m_attachements[1] );
+		deferredShading_shader->SetAndBindUniformTexture( "gSpecular", 3, GL_TEXTURE_2D, gBufferFBO.m_attachements[2] );
+		deferredShading_shader->SetAndBindUniformTexture( "gIBL", 4, GL_TEXTURE_2D, gBufferFBO.m_attachements[3] );
+		deferredShading_shader->SetUniform3f( "camPos", 1, camera.m_position.as_ptr() );
+
+		deferredShading_shader->SetUniformMatrix4f( "viewMatrixInv", 1, false, view.inverse().as_ptr() );	
+		deferredShading_shader->SetUniformMatrix4f( "projMatrixInv", 1, false, projection.inverse().as_ptr() );
+
+		//pass lights data
 		for ( int i = 0; i < g_scene->LightCount(); i++ ) {
 			Light * light = NULL;
 			g_scene->LightByIndex( i, &light );
-
-			//Create shadow map for shadowcasting lights
-			if ( light->m_shadowCaster ) {
-				//configure opengl to render the shadowmap
-				glViewport( 0, 0, light->m_depthBuffer.GetWidth(), light->m_depthBuffer.GetHeight() );
-				light->BindDepthBuffer();
-
-				//render depth of scene to texture (from this lights perspective)
-				light->m_depthShader->UseProgram(); //use depth shader
-				light->EnableSamplerCompareMode();
-				light->PassDepthShaderUniforms(); //pass light matrix to depth shader and activate a face of the cubmap
-
-				//iterate through each surface of each mesh in the scene and render it with m_depthShader active
-				for ( int n = 0; n < g_scene->MeshCount(); n++ ) {			
-					Mesh * mesh = NULL;
-					g_scene->MeshByIndex( n, &mesh );
-					for ( unsigned int j = 0; j < mesh->m_surfaces.size(); j++ ) {
-						mesh->DrawSurface( j ); //draw surface
-					}
-				}
-				light->m_depthBuffer.Unbind();
+			if ( i == 0 ) {
+				light->PassDepthAttribute( deferredShading_shader, 5 );
+				const int shadowMapPartitionSize = ( unsigned int )( light->s_partitionSize );
+				deferredShading_shader->SetUniform1i( "shadowMapPartitionSize", 1, &shadowMapPartitionSize );
 			}
+			light->PassUniforms( deferredShading_shader, i );
+		}
+		deferredShading_shader->SetUniform1i( "lightCount", 1, &lightCount );
 
-			//Draw the scene to the main buffer
-			mainFBO.Bind(); //bind the framebuffer so all subsequent drawing is to it.
-			glViewport( 0, 0, gScreenWidth, gScreenHeight ); //Set the OpenGL viewport to be the entire size of the window
-			if ( i > 0 ) {
-				//subsequent lighting passes add their contributions now that the first one has set all initial depth values.
-				glBlendFunc( GL_ONE, GL_ONE );
-			}
+		//use the screen from the gBufferFBO to render the lighting
+		const unsigned int screenVAO = gBufferFBO.GetScreenVAO();
+		glBindVertexArray( screenVAO );
+		glDrawArrays( GL_QUADS, 0, 4 );
+		glBindVertexArray( 0 );
 
-			MaterialDecl* matDecl;
-			for ( int n = 0; n < g_scene->MeshCount(); n++ ) {
-				Mesh * mesh = NULL;
-				g_scene->MeshByIndex( n, &mesh );
+		//copy the depth buffer from the gBuffer to the mainFBO depth attachement
+		glBindFramebuffer( GL_READ_FRAMEBUFFER, gBufferFBO.GetID() );
+		glBindFramebuffer( GL_DRAW_FRAMEBUFFER, mainFBO.GetID() );
+		glBlitFramebuffer( 0, 0, gScreenWidth, gScreenHeight, 0, 0, gScreenWidth, gScreenHeight, GL_DEPTH_BUFFER_BIT, GL_NEAREST );
+		glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+	}
 
-				for ( unsigned int j = 0; j < mesh->m_surfaces.size(); j++ ) {
-					matDecl = MaterialDecl::GetMaterialDecl( mesh->m_surfaces[j]->materialName.c_str() );
-					matDecl->BindTextures();
+	glEnable( GL_BLEND );
+}
 
-					//pass in camera matrices
-					matDecl->shader->SetUniformMatrix4f( "view", 1, false, view );		
-					matDecl->shader->SetUniformMatrix4f( "projection", 1, false, projection );
-
-					//exit early if this material is errored out
-					if ( matDecl->m_shaderProg == "error" ) {
-						mesh->DrawSurface( j ); //draw surface
-						continue;
-					}
-
-					//pass camera position
-					matDecl->shader->SetUniform3f( "camPos", 1, camera.m_position.as_ptr() );
-
-					//pass lights data
-					light->PassUniforms( matDecl->shader );
-	
-					//draw surface
-					mesh->DrawSurface( j );
-				}
-			}
-			mainFBO.Unbind();
+void RenderScene( const float * view, const float * projection ) {
+	Light * light = NULL;
+	for ( unsigned int i = 0; i < g_scene->LightCount(); i++ ) {
+		g_scene->LightByIndex( i, &light );
+		if ( light->GetShadow() ) {
+			light->UpdateDepthBuffer( g_scene );
 		}
 	}
 
-	//ambient pass
-	if ( debugRenderMode != 5 ) {		
-		mainFBO.Bind();
-		if ( debugRenderMode == 6 ) {
-			glBlendFunc( GL_ONE, GL_ZERO ); //render spec probe only
-		} else {
-			glBlendFunc( GL_ONE, GL_ONE ); //additivly blend spec probe
-		}
+	//Draw the scene to the main buffer
+	mainFBO.Bind(); //bind the framebuffer so all subsequent drawing is to it.
+	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE ); //Enabling color writing to the frame buffer
+	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT ); //Clear previous frame values
+	glViewport( 0, 0, gScreenWidth, gScreenHeight ); //Set the OpenGL viewport to be the entire size of the window
 
-		for ( int i = 0; i < g_scene->EnvProbeCount(); i++ ) {
-			EnvProbe * probe = NULL;
-			g_scene->EnvProbeByIndex( i, &probe );
+	MaterialDecl* matDecl;
+	for ( unsigned int i = 0; i < g_scene->MeshCount(); i++ ) {
+		Mesh * mesh = NULL;
+		g_scene->MeshByIndex( i, &mesh );
 
-			MaterialDecl* matDecl;
-			for ( int n = 0; n < probe->MeshCount(); n++ ) {
-				Mesh * mesh = NULL;
-				probe->MeshByIndex( n, &mesh );
-				for ( unsigned int j = 0; j < mesh->m_surfaces.size(); j++ ) {
-					Str matDeclName = mesh->m_surfaces[j]->materialName;
-					if ( probe->PassUniforms( matDeclName ) == false ) {
-						continue;
-					}
+		for ( unsigned int j = 0; j < mesh->m_surfaces.size(); j++ ) {
+			matDecl = MaterialDecl::GetMaterialDecl( mesh->m_surfaces[j]->materialName.c_str() );
+			matDecl->BindTextures();
 
-					//pass in uniforms
-					probe->s_ambientPass_shader->SetUniformMatrix4f( "view", 1, false, view );		
-					probe->s_ambientPass_shader->SetUniformMatrix4f( "projection", 1, false, projection );
-					probe->s_ambientPass_shader->SetUniform3f( "camPos", 1, camera.m_position.as_ptr() );
-	
-					//draw surface
-					mesh->DrawSurface( j );
-				}
+			//pass in camera data
+			matDecl->shader->SetUniformMatrix4f( "view", 1, false, view );		
+			matDecl->shader->SetUniformMatrix4f( "projection", 1, false, projection );
+			matDecl->shader->SetUniform3f( "camPos", 1, camera.m_position.as_ptr() );
+
+			//exit early if this material is errored out
+			if ( matDecl->m_shaderProg == "error" ) {
+				mesh->DrawSurface( j ); //draw surface
+				continue;
+			}				
+
+			//pass lights data
+			for ( int k = 0; k < g_scene->LightCount(); k++ ) {
+				g_scene->LightByIndex( k, &light );
+				if ( k == 0 ) {
+					light->PassDepthAttribute( matDecl->shader, 4 );
+					const int shadowMapPartitionSize = ( unsigned int )( light->s_partitionSize );
+					matDecl->shader->SetUniform1i( "shadowMapPartitionSize", 1, &shadowMapPartitionSize );
+				}					
+				light->PassUniforms( matDecl->shader, k );
 			}
+			const int lightCount = ( int )( g_scene->LightCount() );
+			matDecl->shader->SetUniform1i( "lightCount", 1, &lightCount );
+
+			//pass in EnvProbe data
+			const EnvProbe * probe = mesh->GetProbe();
+			if ( probe != NULL ) {
+				probe->PassUniforms( matDecl->shader, 5 );
+			}
+	
+			//draw surface
+			mesh->DrawSurface( j );
 		}
 	}
+	mainFBO.Unbind();
 }
 
 /*
@@ -327,18 +442,22 @@ void drawFrame( void ) {
 		debugRenderMode = atoi( g_cvar_debugLighting->GetArgs().c_str() );
 	}
 
-	if ( debugRenderMode > 0 && debugRenderMode <= 4 ) {		
-		RenderDebug( view.as_ptr(), projection.as_ptr(), debugRenderMode );
+	if ( g_cvar_deferredRender->GetState() ) {
+		RenderDeferred( view, projection, debugRenderMode );
 	} else {
-		if ( edgeHighlights_renderMode == 0 ) { //regular
-			RenderScene( view.as_ptr(), projection.as_ptr() );
-		} else if ( edgeHighlights_renderMode == 1 ) { //wireframe overlayed
-			RenderScene( view.as_ptr(), projection.as_ptr() );
-			const Vec3 edgeColor = Vec3( 1.0, 0.0, 0.0 );
-			RenderWireframe( view.as_ptr(), projection.as_ptr(), edgeColor.as_ptr(), edgeHighlights_renderMode );
-		} else if ( edgeHighlights_renderMode == 2 ) { //wireframe only
-			const Vec3 edgeColor = Vec3( 1.0, 0.0, 0.0 );
-			RenderWireframe( view.as_ptr(), projection.as_ptr(), edgeColor.as_ptr(), edgeHighlights_renderMode );
+		if ( debugRenderMode > 0 && debugRenderMode <= 4 ) {		
+			RenderDebug( view.as_ptr(), projection.as_ptr(), debugRenderMode );
+		} else {
+			if ( edgeHighlights_renderMode == 0 ) { //regular
+				RenderScene( view.as_ptr(), projection.as_ptr() );
+			} else if ( edgeHighlights_renderMode == 1 ) { //wireframe overlayed
+				RenderScene( view.as_ptr(), projection.as_ptr() );
+				const Vec3 edgeColor = Vec3( 1.0, 0.0, 0.0 );
+				RenderWireframe( view.as_ptr(), projection.as_ptr(), edgeColor.as_ptr(), edgeHighlights_renderMode );
+			} else if ( edgeHighlights_renderMode == 2 ) { //wireframe only
+				const Vec3 edgeColor = Vec3( 1.0, 0.0, 0.0 );
+				RenderWireframe( view.as_ptr(), projection.as_ptr(), edgeColor.as_ptr(), edgeHighlights_renderMode );
+			}
 		}
 	}
 
@@ -346,18 +465,6 @@ void drawFrame( void ) {
 
 	mainFBO.Bind();
 
-	if ( g_cvar_renderLightModels->GetState() ) {
-		int debugLightRenderMode = atoi( g_cvar_renderLightModels->GetArgs().c_str() );
-		if ( debugLightRenderMode > 0 ) {
-			//draw debug light models
-			for ( int i = 0; i < g_scene->LightCount(); i++ ) {
-				Light * light = NULL;
-				g_scene->LightByIndex( i, &light );
-				light->DebugDraw( &camera, view.as_ptr(), projection.as_ptr() );
-			}
-		}
-	}
-	
 	//draw skybox
 	if ( debugRenderMode == 0 ) {
 		MaterialDecl* skyMat;
@@ -386,26 +493,24 @@ void drawFrame( void ) {
 		postProcessManager.BlitFramebuffer( &mainFBO );
 		postProcessManager.Bloom();
 		postProcessManager.Draw( 1.0 );
-		glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 );
+		glBindFramebuffer( GL_FRAMEBUFFER, 0 );
 	}
 	
-	//---------------------
-	//Display Shadowmap texture
-	//---------------------	
+	//------------------------
+	//Render Light Models CVar
+	//------------------------
 	if ( g_cvar_renderLightModels->GetState() ) {
-		int debugLightRenderMode = atoi( g_cvar_renderLightModels->GetArgs().c_str() );
-		if ( debugLightRenderMode > 0 ) {
-			Light * light = NULL;
-			g_scene->LightByIndex( debugLightRenderMode - 1, &light );
-			if ( g_scene->LightByIndex( debugLightRenderMode - 1, &light ) ) {
-				if ( light->m_shadowCaster ) {
-					//render the depth buffer to a quad on the screen
-					light->DrawDepthBuffer( view.as_ptr(), projection.as_ptr() );
-				}
-			} else {
-				g_console->AddError( "ERROR: There is no light at this index." );
-				g_cvar_renderLightModels->SetArgs( Str( "0" ) );
-			}
+		//copy the depth buffer from the mainFBO to the default buffer
+		glBindFramebuffer( GL_READ_FRAMEBUFFER, mainFBO.GetID() );
+		glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 );
+		glBlitFramebuffer( 0, 0, gScreenWidth, gScreenHeight, 0, 0, gScreenWidth, gScreenHeight, GL_DEPTH_BUFFER_BIT, GL_NEAREST );
+		glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+
+		//draw debug light data
+		Light * light = NULL;
+		for ( unsigned int i = 0; i < g_scene->LightCount(); i++ ) {
+			g_scene->LightByIndex( i, &light );
+			light->DebugDraw( &camera, view.as_ptr(), projection.as_ptr() );
 		}
 	}
 
@@ -441,7 +546,7 @@ bool glSetup( int argc, char ** argv ) {
         glGetIntegerv( GL_SAMPLES, &iNumSamples );
         printf( "MSAA on, GL_SAMPLE_BUFFERS = %d, GL_SAMPLES = %d\n", iMultiSample, iNumSamples );
 	} else {
-		glDisable(GL_MULTISAMPLE);
+		glDisable( GL_MULTISAMPLE );
 		glutInitDisplayMode( GLUT_SINGLE | GLUT_RGB | GLUT_DEPTH ); //Tell GLUT to create a single display with Red Green Blue (RGB) color.
 		printf( "MSAA off\n" );
 	}
@@ -504,7 +609,7 @@ int main( int argc, char ** argv ) {
 	vertTransform_shader = vertTransform_shader->GetShader( "vertTransform" );
 
 	MaterialDecl * matDecl = NULL;
-	if ( g_scene->LoadFromFile( "data\\scenes\\ibl_test.SCN" ) ) {
+	if ( g_scene->LoadFromFile( "data\\scenes\\pointLightTest.SCN" ) ) {
 		for ( int n = 0; n < g_scene->MeshCount(); n++ ) {
 			Mesh * mesh = g_scene->MeshByIndex( n );
 			g_scene->MeshByIndex( n, &mesh );
@@ -529,13 +634,6 @@ int main( int argc, char ** argv ) {
 				}
 			}
 		}
-	}
-
-	//enable drawing of debug light data (model and shadow depthbuffer)
-	for ( int i = 0; i < g_scene->LightCount(); i++ ) {
-		Light * light = NULL;
-		g_scene->LightByIndex( i, &light );
-		light->DebugDrawEnable();
 	}
 
 	//create post processing frame buffer

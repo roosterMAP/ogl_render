@@ -10,6 +10,8 @@ Camera::Camera() {
 	m_right.normalize();
 	m_pitch = 0.0;
 	m_yaw = 0.0;
+	m_near = 0.01f;
+	m_far = 100.0f;
 }
 
 Camera::Camera( float fieldOfView, Vec3 camPos, Vec3 camLook ) {
@@ -21,6 +23,8 @@ Camera::Camera( float fieldOfView, Vec3 camPos, Vec3 camLook ) {
 	m_right.normalize();
 	m_pitch = 0.0;
 	m_yaw = 0.0;
+	m_near = 0.01f;
+	m_far = 100.0f;
 }
 
 Mat4 Camera::viewMatrix() {
@@ -31,13 +35,7 @@ Mat4 Camera::viewMatrix() {
 
 Mat4 Camera::projectionMatrix( float aspect ) {
 	Mat4 mat = Mat4();
-	mat.Perspective( to_radians( m_fov ), aspect, 0.001f, 100.0f );
-	return mat;
-}
-
-Mat4 Camera::projectionMatrix( float aspect, float near, float far ) {
-	Mat4 mat = Mat4();
-	mat.Perspective( to_radians( m_fov ), aspect, near, far );
+	mat.Perspective( to_radians( m_fov ), aspect, m_near, m_far );
 	return mat;
 }
 

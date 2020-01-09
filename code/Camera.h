@@ -18,16 +18,16 @@ class Camera {
 
 		Mat4 viewMatrix();
 		Mat4 projectionMatrix( float aspect );
-		Mat4 projectionMatrix( float aspect, float near, float far );
 		void FPLookOffset( float offset_x, float offset_y, float sensitivity );
 
 		Vec3 m_position;
 		Vec3 m_right, m_look;
 		float m_fov;
+		float m_near, m_far;
 
 	private:
 		float m_pitch, m_yaw;		
-		Vec3 m_up;
+		Vec3 m_up;		
 };
 
 #endif

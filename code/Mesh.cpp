@@ -135,11 +135,9 @@ bool Mesh::LoadMSHFromFile( const char * msh_relative ) {
 	m_bounds.min = Vec3( 99999999.9, 99999999.9, 99999999.9 );
 	m_bounds.max = Vec3( -99999999.9, -99999999.9, -99999999.9 );
 
-	m_name = new char[ 512 ];
-	strcpy( m_name, msh_relative );
-
+	m_name = Str( msh_relative );
 	char msh_absolute[ 2048 ];
-	RelativePathToFullPath( m_name, msh_absolute );	
+	RelativePathToFullPath( m_name.c_str(), msh_absolute );	
 	FILE * fp;
 	fopen_s( &fp, msh_absolute, "rb" );
 	if ( !fp ) {
@@ -288,11 +286,9 @@ bool Mesh::LoadOBJFromFile( const char * obj_relative ) {
 	m_bounds.min = Vec3( 99999999.9, 99999999.9, 99999999.9 );
 	m_bounds.max = Vec3( -99999999.9, -99999999.9, -99999999.9 );
 
-	m_name = new char[ 512 ];
-	strcpy( m_name, obj_relative );
-
+	m_name = Str( obj_relative );
 	char obj_absolute[ 2048 ];
-	RelativePathToFullPath( m_name, obj_absolute );	
+	RelativePathToFullPath( m_name.c_str(), obj_absolute );	
 	FILE * fp;
 	fopen_s( &fp, obj_absolute, "rb" );
 	if ( !fp ) {

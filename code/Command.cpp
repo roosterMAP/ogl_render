@@ -17,6 +17,7 @@ CVar * g_cvar_renderLightModels = new CVar();
 CVar * g_cvar_showVertTransform = new CVar();
 CVar * g_cvar_showEdgeHighlights = new CVar();
 CVar * g_cvar_brdfIntegrateLUT = new CVar();
+CVar * g_cvar_deferredRender = new CVar();
 
 CommandSys * g_cmdSys = CommandSys::getInstance(); //declare g_cmdSys singleton
 
@@ -84,9 +85,8 @@ Fn_DebugLights
 void Fn_RenderLightModels( Str args ) {
 	if ( atoi( args.c_str() ) == 0 ) {
 		g_cvar_renderLightModels->SetState( false );
-	} else {
+	} else if ( atoi( args.c_str() ) == 1 ) {
 		g_cvar_renderLightModels->SetState( true );
-		g_cvar_renderLightModels->SetArgs( args );
 	}
 }
 
@@ -512,7 +512,8 @@ void Fn_BRDFIntegrationLUT( Str args ) {
 	brdfIntegrationFBO.Bind();
 	brdfIntegration_shader->UseProgram();
 	glBindVertexArray( brdfIntegrationFBO.GetScreenVAO() );
-	glDrawElements( GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0 );
+	glDrawArrays( GL_QUADS, 0, 4 );
+	glBindVertexArray( 0 );
 	brdfIntegrationFBO.Unbind();
 	glEnable( GL_DEPTH_TEST );
 
@@ -532,6 +533,22 @@ void Fn_BRDFIntegrationLUT( Str args ) {
 	Str info( "BRDF Integration LUT image saved to: " );
 	info.Append( Str( imgPath ) );
 	console->AddInfo( info.c_str() );
+}
+
+/*
+================================
+Fn_DeferredRender
+================================
+*/
+void Fn_DeferredRender( Str args ) {
+	int arg_int = atoi( args.c_str() );
+	if ( arg_int > 0 && arg_int < 3 ) {
+		g_cvar_deferredRender->SetState( true );
+		g_cvar_deferredRender->SetArgs( args );
+	} else {
+		g_cvar_deferredRender->SetState( false );
+		g_cvar_deferredRender->SetArgs( Str( '0' ) );
+	}
 }
 
 /*
@@ -617,6 +634,12 @@ void CommandSys::BuildCommands() {
 	brdfIntegrationLUTCommand->description = Str( "Pre-compute the BRDF as a LUT." );
 	brdfIntegrationLUTCommand->fn = Fn_BRDFIntegrationLUT;
 	m_commands.push_back( brdfIntegrationLUTCommand );
+
+	Cmd * deferredRenderEnableCommand = new Cmd;
+	deferredRenderEnableCommand->name = Str( "deferredRender" );
+	deferredRenderEnableCommand->description = Str( "Enable/Disable Deferred Rendering" );
+	deferredRenderEnableCommand->fn = Fn_DeferredRender;
+	m_commands.push_back( deferredRenderEnableCommand );
 }
 
 /*

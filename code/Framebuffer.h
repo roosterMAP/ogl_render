@@ -19,9 +19,9 @@ Framebuffer
 */
 class Framebuffer {
 	public:
-		Framebuffer() { m_multisample = 0; }
+		Framebuffer() { m_id = 0; m_multisample = 0; }
 		Framebuffer( std::string colorbufferUniform );
-		Framebuffer( const Framebuffer & rhs ) { m_multisample = 0; *this = rhs; }
+		Framebuffer( const Framebuffer & rhs ) { m_id = 0; m_multisample = 0; *this = rhs; }
 		~Framebuffer() {};
 
 		unsigned int GetID() { return m_id; }

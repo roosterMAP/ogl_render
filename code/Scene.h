@@ -3,6 +3,12 @@
 #define __SCENE_H_INCLUDE__
 
 #include "Light.h"
+#include "String.h"
+#include "Mesh.h"
+
+class Light;
+class PointLight;
+class EnvProbe;
 
 /*
 ================================
@@ -19,10 +25,11 @@ class Scene {
 
 		const Str& GetName() { return m_name; }
 
-		int MeshCount() { return m_meshCount; }
+		int MeshCount() const { return m_meshCount; }
 		bool MeshByIndex( unsigned int index, Mesh ** obj );
 		Mesh * MeshByIndex( unsigned int index );
 
+		const unsigned int AddLight( Light * newLight );
 		int LightCount() { return m_lightCount; }
 		bool LightByIndex( unsigned int index, Light ** obj );
 

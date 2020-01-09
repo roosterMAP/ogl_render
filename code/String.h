@@ -40,6 +40,7 @@ class Str {
 		friend bool operator!=( const Str &a, const char *b );
 		friend bool operator!=( const char *a, const Str &b );
 
+		bool Initialized() const;
 		unsigned int Length() const;
 		bool IsEmpty() const;
 		void Clear();

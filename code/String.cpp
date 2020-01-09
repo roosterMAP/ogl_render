@@ -246,6 +246,15 @@ bool operator!=( const char *a, const Str &b ) {
 
 /*
 ================================
+Str::Initialized
+================================
+*/
+bool Str::Initialized() const {
+	return m_data == NULL;
+}
+
+/*
+================================
 Str::Length
 ================================
 */
