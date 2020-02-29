@@ -10,38 +10,14 @@ layout ( location = 5 ) in mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
-struct Light {
-	int typeIndex;
-	vec3 position;
-	vec3 color;
-	vec3 direction;
-	float angle;
-	float radius;
-	float ambient;
-	bool shadow;
-	sampler2DShadow shadowMap;
-	samplerCubeShadow shadowCubeMap;
-	mat4 matrix;
-	float far_plane;
-};
-uniform Light light;
-
-uniform vec3 camPos;
-
 out vec3 FragPos;
-out vec3 FragNormal;
 out vec2 TexCoord;
-out vec4 FragPosLightSpace;
 out mat3 TBN;
 
 void main() {
 	//pass frag data
-	FragPos = aPos;
-	FragNormal = aNormal;
+	FragPos = ( model * vec4( aPos, 1.0 ) ).xyz;
 	TexCoord = aUV;
-
-	//pass frag pos data in light spase (for 2d shadow maps)
-	FragPosLightSpace = light.matrix * vec4( FragPos, 1.0 );
 
 	//compute tangent space matrix
 	mat3 model_noScale = mat3( transpose( inverse( model ) ) );

@@ -23,7 +23,7 @@ void main() {
 	vec3 T = normalize( model_noScale * aTangent );
 	vec3 N = normalize( model_noScale * aNormal );
 	T = normalize( T - dot( T, N ) * N ); //re-orthogonalize T with respect to N
-	vec3 B = aFSign * cross( N, T );
+	vec3 B = cross( N, T ) + ( aFSign * 0.00000001 ) ;
 
 	vs_out.normal = normalize( projection * view * vec4( N, 0.0 ) );
 	vs_out.tangent = normalize( projection * view * vec4( T, 0.0 ) );
