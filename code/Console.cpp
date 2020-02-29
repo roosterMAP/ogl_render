@@ -344,7 +344,7 @@ void Console::UpdateInputLine_Tab() {
 	if ( m_isActive && m_currentString.Length() > 0 ) {
 		Str tabCmdName = m_currentString;
 		const int firstSpace_idx = m_currentString.Find( ' ', 0 );
-		if ( firstSpace_idx >= 0 ) {
+		if ( firstSpace_idx > 0 ) {
 			tabCmdName = m_currentString.Substring( 0, firstSpace_idx );
 		}
 

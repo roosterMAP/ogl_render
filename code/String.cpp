@@ -182,7 +182,7 @@ Str::operator==
 ================================
 */
 bool operator==( const Str &a, const Str &b ) {
-	if ( strcmp( a.m_data, b.m_data ) ) {
+	if ( strcmp( a.m_data, b.m_data ) != 0 ) {
 		return false;
 	} else {
 		return true;
@@ -196,7 +196,7 @@ Str::operator==
 */
 bool operator==( const Str &a, const char *b ) {
 	assert( b );
-	if ( strcmp( a.m_data, b ) ) {
+	if ( strcmp( a.m_data, b ) != 0 ) {
 		return false;
 	} else {
 		return true;
@@ -210,7 +210,7 @@ Str::operator==
 */
 bool operator==( const char *a, const Str &b ) {
 	assert( a );
-	if ( strcmp( a, b.m_data ) ) {
+	if ( strcmp( a, b.m_data ) != 0 ) {
 		return false;
 	} else {
 		return true;
@@ -250,7 +250,7 @@ Str::Initialized
 ================================
 */
 bool Str::Initialized() const {
-	return m_data == NULL;
+	return m_data != NULL;
 }
 
 /*

@@ -17,7 +17,6 @@ CVar * g_cvar_renderLightModels = new CVar();
 CVar * g_cvar_showVertTransform = new CVar();
 CVar * g_cvar_showEdgeHighlights = new CVar();
 CVar * g_cvar_brdfIntegrateLUT = new CVar();
-CVar * g_cvar_deferredRender = new CVar();
 
 CommandSys * g_cmdSys = CommandSys::getInstance(); //declare g_cmdSys singleton
 
@@ -55,7 +54,7 @@ void Fn_DebugLighting( Str args ) {
 	const int argVal =  atoi( args.c_str() );
 	if ( argVal == 0 ) {
 		g_cvar_debugLighting->SetState( false );
-	} else if ( argVal < 0 || argVal > 6 ) {
+	} else if ( argVal < 0 || argVal > 7 ) {
 		Console * console = Console::getInstance();
 		console->AddError( "debugLighting :: Invalid Arg!!!" );
 	} else {
@@ -85,8 +84,13 @@ Fn_DebugLights
 void Fn_RenderLightModels( Str args ) {
 	if ( atoi( args.c_str() ) == 0 ) {
 		g_cvar_renderLightModels->SetState( false );
+		g_cvar_renderLightModels->SetArgs( Str( '0' ) );
 	} else if ( atoi( args.c_str() ) == 1 ) {
 		g_cvar_renderLightModels->SetState( true );
+		g_cvar_renderLightModels->SetArgs( Str( '1' ) );
+	} else if ( atoi( args.c_str() ) == 2 ) {
+		g_cvar_renderLightModels->SetState( true );
+		g_cvar_renderLightModels->SetArgs( Str( '2' ) );
 	}
 }
 
@@ -537,22 +541,6 @@ void Fn_BRDFIntegrationLUT( Str args ) {
 
 /*
 ================================
-Fn_DeferredRender
-================================
-*/
-void Fn_DeferredRender( Str args ) {
-	int arg_int = atoi( args.c_str() );
-	if ( arg_int > 0 && arg_int < 3 ) {
-		g_cvar_deferredRender->SetState( true );
-		g_cvar_deferredRender->SetArgs( args );
-	} else {
-		g_cvar_deferredRender->SetState( false );
-		g_cvar_deferredRender->SetArgs( Str( '0' ) );
-	}
-}
-
-/*
-================================
 CommandSys::getInstance
 ================================
 */
@@ -634,12 +622,6 @@ void CommandSys::BuildCommands() {
 	brdfIntegrationLUTCommand->description = Str( "Pre-compute the BRDF as a LUT." );
 	brdfIntegrationLUTCommand->fn = Fn_BRDFIntegrationLUT;
 	m_commands.push_back( brdfIntegrationLUTCommand );
-
-	Cmd * deferredRenderEnableCommand = new Cmd;
-	deferredRenderEnableCommand->name = Str( "deferredRender" );
-	deferredRenderEnableCommand->description = Str( "Enable/Disable Deferred Rendering" );
-	deferredRenderEnableCommand->fn = Fn_DeferredRender;
-	m_commands.push_back( deferredRenderEnableCommand );
 }
 
 /*
@@ -662,6 +644,10 @@ const bool CommandSys::CallByName( Str name ) const {
 		} else {
 			cmdName.Append( name[i] );
 		}
+	}
+
+	if ( cmdName.Length() == 0 ) {
+		return false;
 	}
 
 	//search for the command and call its fn member and pass args

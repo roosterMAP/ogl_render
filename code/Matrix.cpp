@@ -46,7 +46,7 @@ Vec2 & Mat2::operator[]( int i ) {
 	}
 }
 
-Mat2 Mat2::operator+( Mat2 other ) {
+Mat2 Mat2::operator+( Mat2 other ) const {
 	Mat2 newMat = Mat2( 0.0f );
 	newMat.m_col1 = m_col1 + other.m_col1;
 	newMat.m_col2 = m_col2 + other.m_col2;
@@ -58,7 +58,7 @@ void Mat2::operator+=( Mat2 other ) {
 	m_col2 += other.m_col2;
 }
 
-Mat2 Mat2::operator-( Mat2 other ) {
+Mat2 Mat2::operator-( Mat2 other ) const {
 	Mat2 newMat = Mat2( 0.0f );
 	newMat.m_col1 = m_col1 - other.m_col1;
 	newMat.m_col2 = m_col2 - other.m_col2;
@@ -70,7 +70,7 @@ void Mat2::operator-=( Mat2 other ) {
 	m_col2 -= other.m_col2;
 }
 
-Mat2 Mat2::operator*( float scalar ) {
+Mat2 Mat2::operator*( float scalar ) const {
 	Mat2 newMat = Mat2( 0.0f );
 	newMat.m_col1 = m_col1 * scalar;
 	newMat.m_col2 = m_col2 * scalar;
@@ -82,7 +82,7 @@ void Mat2::operator*=( float scalar ) {
 	m_col2 *= scalar;
 }
 
-Mat2 Mat2::operator*( Vec2 vec ) {
+Mat2 Mat2::operator*( Vec2 vec ) const {
 	Mat2 newMat = Mat2();
 
 	newMat.m_col1[0] = dot( vec.as_ptr(), m_col1[0], m_col2[0] );
@@ -107,7 +107,7 @@ void Mat2::operator*=( Vec2 vec ) {
 	m_col2 = col2;
 }
 
-Mat2 Mat2::operator*( Mat2 other ) {
+Mat2 Mat2::operator*( Mat2 other ) const {
 	Mat2 newMat = Mat2();
 
 	newMat.m_col1[0] = dot( other.m_col1.as_ptr(), m_col1[0], m_col2[0] );
@@ -132,7 +132,7 @@ void Mat2::operator*=( Mat2 other ) {
 	m_col2 = col2;
 }
 
-Mat2 Mat2::operator/( float scalar ) {
+Mat2 Mat2::operator/( float scalar ) const {
 	Mat2 newMat = Mat2( 0.0f );
 	newMat.m_col1 = m_col1 / scalar;
 	newMat.m_col2 = m_col2 / scalar;
@@ -160,11 +160,11 @@ Mat2 Mat2::transpose() {
 	return newMat;
 }
 
-float Mat2::determinant() {
+float Mat2::determinant() const {
 	return m_col1[0] * m_col2[1] - m_col1[1] * m_col2[0];
 }
 
-Mat2 Mat2::inverse() {
+Mat2 Mat2::inverse() const {
 	const float det = determinant();
 	assert( fabsf( det ) > EPSILON );
 	const float invDet = 1.0f/ det;
@@ -247,7 +247,7 @@ Vec3 & Mat3::operator[]( int i ) {
 	}
 }
 
-Mat3 Mat3::operator+( Mat3 other ) {
+Mat3 Mat3::operator+( Mat3 other ) const {
 	Mat3 newMat = Mat3( 0.0f );
 	newMat.m_col1 = m_col1 + other.m_col1;
 	newMat.m_col2 = m_col2 + other.m_col2;
@@ -261,7 +261,7 @@ void Mat3::operator+=( Mat3 other ) {
 	m_col3 += other.m_col3;
 }
 
-Mat3 Mat3::operator-( Mat3 other ) {
+Mat3 Mat3::operator-( Mat3 other ) const {
 	Mat3 newMat = Mat3( 0.0f );
 	newMat.m_col1 = m_col1 - other.m_col1;
 	newMat.m_col2 = m_col2 - other.m_col2;
@@ -275,7 +275,7 @@ void Mat3::operator-=( Mat3 other ) {
 	m_col3 -= other.m_col3;
 }
 
-Mat3 Mat3::operator*( float scalar ) {
+Mat3 Mat3::operator*( float scalar ) const {
 	Mat3 newMat = Mat3( 0.0f );
 	newMat.m_col1 = m_col1 * scalar;
 	newMat.m_col2 = m_col2 * scalar;
@@ -289,7 +289,7 @@ void Mat3::operator*=( float scalar ) {
 	m_col3 *= scalar;
 }
 
-Mat3 Mat3::operator*( Vec3 vec ) {
+Mat3 Mat3::operator*( Vec3 vec ) const {
 	Mat3 newMat = Mat3();
 
 	newMat.m_col1[0] = dot( vec.as_ptr(), m_col1[0], m_col2[0], m_col3[0] );
@@ -328,7 +328,7 @@ void Mat3::operator*=( Vec3 vec ) {
 	m_col3 = col3;
 }
 
-Mat3 Mat3::operator*( Mat3 other ) {
+Mat3 Mat3::operator*( Mat3 other ) const {
 	Mat3 newMat = Mat3();
 
 	newMat.m_col1[0] = dot( other.m_col1.as_ptr(), m_col1[0], m_col2[0], m_col3[0] );
@@ -367,7 +367,7 @@ void Mat3::operator*=( Mat3 other ) {
 	m_col3 = col3;
 }
 
-Mat3 Mat3::operator/( float scalar ) {
+Mat3 Mat3::operator/( float scalar ) const {
 	Mat3 newMat = Mat3( 0.0f );
 	newMat.m_col1 = m_col1 / scalar;
 	newMat.m_col2 = m_col2 / scalar;
@@ -416,7 +416,7 @@ Mat3 Mat3::transpose() {
 	return newMat;
 }
 
-float Mat3::determinant() {
+float Mat3::determinant() const {
 	float det2_12_01 = m_col2[0] * m_col3[1] - m_col2[1] * m_col3[0];
 	float det2_12_02 = m_col2[0] * m_col3[2] - m_col2[2] * m_col2[0];
 	float det2_12_12 = m_col2[1] * m_col3[2] - m_col2[2] * m_col3[1];
@@ -424,7 +424,7 @@ float Mat3::determinant() {
 	return m_col1[0] * det2_12_12 - m_col1[1] * det2_12_02 + m_col1[2] * det2_12_01;
 }
 
-Mat3 Mat3::inverse() {
+Mat3 Mat3::inverse() const {
 	const float det = determinant();
 	assert( fabsf( det ) > EPSILON );
 	const float invDet = 1.0 / det;
@@ -487,10 +487,10 @@ Mat4::Mat4( float n ) {
 	m_col4 = Vec4( n );
 }
 
-Mat4::Mat4( float * data ) {
+Mat4::Mat4( const float * data ) {
 	m_col1 = Vec4( data[0], data[1], data[2], data[3] );
-	m_col2 = Vec4( data[5], data[6], data[7], data[8] );
-	m_col3 = Vec4( data[9], data[10], data[11], data[12] );
+	m_col2 = Vec4( data[4], data[5], data[6], data[7] );
+	m_col3 = Vec4( data[8], data[9], data[10], data[11] );
 	m_col4 = Vec4( data[12], data[13], data[14], data[15] );
 }
 
@@ -621,7 +621,7 @@ Vec4 & Mat4::operator[]( int i ) {
 	}
 }
 
-Mat4 Mat4::operator+( Mat4 other ) {
+Mat4 Mat4::operator+( Mat4 other ) const {
 	Mat4 newMat = Mat4( 0.0f );
 	newMat.m_col1 = m_col1 + other.m_col1;
 	newMat.m_col2 = m_col2 + other.m_col2;
@@ -637,7 +637,7 @@ void Mat4::operator+=( Mat4 other ) {
 	m_col4 += other.m_col4;
 }
 
-Mat4 Mat4::operator-( Mat4 other ) {
+Mat4 Mat4::operator-( Mat4 other ) const {
 	Mat4 newMat = Mat4( 0.0f );
 	newMat.m_col1 = m_col1 - other.m_col1;
 	newMat.m_col2 = m_col2 - other.m_col2;
@@ -653,7 +653,7 @@ void Mat4::operator-=( Mat4 other ) {
 	m_col4 -= other.m_col4;
 }
 
-Mat4 Mat4::operator*( float scalar ) {
+Mat4 Mat4::operator*( float scalar ) const {
 	Mat4 newMat = Mat4( 0.0f );
 	newMat.m_col1 = m_col1 * scalar;
 	newMat.m_col2 = m_col2 * scalar;
@@ -669,7 +669,7 @@ void Mat4::operator*=( float scalar ) {
 	m_col4 *= scalar;
 }
 
-Mat4 Mat4::operator*( Vec4 vec ) {
+Mat4 Mat4::operator*( Vec4 vec ) const {
 	Mat4 newMat = Mat4();
 
 	newMat.m_col1[0] = dot( vec.as_ptr(), m_col1[0], m_col2[0], m_col3[0], m_col4[0] );
@@ -726,7 +726,7 @@ void Mat4::operator*=( Vec4 vec ) {
 	m_col4 = col4;
 }
 
-Mat4 Mat4::operator*( Mat4 other ) {
+Mat4 Mat4::operator*( Mat4 other ) const {
 	Mat4 newMat = Mat4();
 
 	newMat.m_col1[0] = dot( other.m_col1.as_ptr(), m_col1[0], m_col2[0], m_col3[0], m_col4[0] );
@@ -783,7 +783,7 @@ void Mat4::operator*=( Mat4 other ) {
 	m_col4 = col4;
 }
 
-Mat4 Mat4::operator/( float scalar ) {
+Mat4 Mat4::operator/( float scalar ) const {
 	Mat4 newMat = Mat4( 0.0f );
 	newMat.m_col1 = m_col1 / scalar;
 	newMat.m_col2 = m_col2 / scalar;
@@ -863,7 +863,7 @@ Mat4 Mat4::transpose() {
 	return trans;
 }
 
-float Mat4::determinant() {
+float Mat4::determinant() const {
 		//2x2 sub-determinants
 		const float det2_01_01 = m_col1[0] * m_col2[1] - m_col1[1] * m_col2[0];
 		const float det2_01_02 = m_col1[0] * m_col2[2] - m_col1[2] * m_col2[0];
@@ -881,7 +881,7 @@ float Mat4::determinant() {
 		return ( -det3_201_123 * m_col4[0] + det3_201_023 * m_col4[1] - det3_201_013 * m_col4[2] + det3_201_012 * m_col4[3] );
 }
 
-Mat4 Mat4::inverse() {
+Mat4 Mat4::inverse() const {
 	//2x2 sub-determinants required to calculate 4x4 determinant
 	float det2_01_01 = m_col1[0] * m_col2[1] - m_col1[1] * m_col2[0];
 	float det2_01_02 = m_col1[0] * m_col2[2] - m_col1[2] * m_col2[0];

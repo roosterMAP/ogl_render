@@ -20,6 +20,8 @@ class Camera {
 		Mat4 projectionMatrix( float aspect );
 		void FPLookOffset( float offset_x, float offset_y, float sensitivity );
 
+		Vec3 GetLook() const { return m_look; }
+
 		Vec3 m_position;
 		Vec3 m_right, m_look;
 		float m_fov;

@@ -151,6 +151,10 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 				tempSpotLight->SetAngle( val1 );
 			} else if ( sscanf_s( buff, "\tsiz %f", &val1 ) == 1 ) { //radius
 				currentLight->SetRadius( val1 );
+			} else if ( sscanf_s( buff, "\tmxr %f", &val1 ) == 1 ) { //max_radius
+				currentLight->SetMaxRadius( val1 );
+			} else if ( sscanf_s( buff, "\tbrt %f", &val1 ) == 1 ) { //brightness
+				currentLight->SetBrightness( val1 );
 			} else if ( sscanf_s( buff, "\tsha %d", &intVal ) == 1 ) { //shadow
 				if ( intVal == 1 ) {
 					currentLight->SetShadow( true );
@@ -167,6 +171,13 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 				currentLight->SetDirection( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tsiz %f", &val1 ) == 1 ) { //radius
 				currentLight->SetRadius( val1 );
+			} else if ( sscanf_s( buff, "\tmxr %f", &val1 ) == 1 ) { //max_radius
+				currentLight->SetMaxRadius( val1 );
+			} else if ( sscanf_s( buff, "\tdrr %f", &val1 ) == 1 ) { //dir_radius
+				DirectionalLight* tempDirectionalLight = ( DirectionalLight* )currentLight;
+				tempDirectionalLight->SetDirRadius( val1 );
+			} else if ( sscanf_s( buff, "\tbrt %f", &val1 ) == 1 ) { //brightness
+				currentLight->SetBrightness( val1 );
 			} else if ( sscanf_s( buff, "\tsha %d", &intVal ) == 1 ) { //shadow
 				if ( intVal == 1 ) {
 					currentLight->SetShadow( true );
@@ -181,6 +192,10 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 				currentLight->SetPosition( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tsiz %f", &val1 ) == 1 ) { //radius
 				currentLight->SetRadius( val1 );
+			} else if ( sscanf_s( buff, "\tmxr %f", &val1 ) == 1 ) { //max_radius
+				currentLight->SetMaxRadius( val1 );
+			} else if ( sscanf_s( buff, "\tbrt %f", &val1 ) == 1 ) { //brightness
+				currentLight->SetBrightness( val1 );
 			} else if ( sscanf_s( buff, "\tsha %d", &intVal ) == 1 ) { //shadow
 				if ( intVal == 1 ) {
 					currentLight->SetShadow( true );

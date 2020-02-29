@@ -7,6 +7,8 @@ Shader * Light::s_depthShader = new Shader();
 Framebuffer Light::s_depthBufferAtlas = Framebuffer( "depthMap" );
 unsigned int Light::s_partitionSize = s_depthBufferAtlasSize_min;
 
+float Light::s_lightAttenuationBias = 0.005f;
+
 Mesh Light::s_debugModel;
 Mesh DirectionalLight::s_debugModel_directional;
 Mesh SpotLight::s_debugModel_spot;
@@ -66,7 +68,7 @@ Light::Light() {
 		s_depthShader->CompileShaderFromCSTR( depth_vshader_source, depth_fshader_source );
 	}
 
-	m_shadowIndex = -1;
+	m_uniformBlock = LightStorage();	
 	m_PosInShadowAtlas = Vec2();
 }
 
@@ -83,10 +85,18 @@ void Light::Initialize() {
 	m_shadowCaster = false;
 	m_near_plane = 0.1f;
 	m_far_plane = 10.0f;
-	m_position = Vec3( 0.0f );
-	m_color = Vec3( 1.0f );
-	m_direction = Vec3( 1.0f, 0.0f, 0.0f );	
-	m_xfrm = Mat4();	
+	m_xfrm = Mat4();
+	m_uniformBlock.position = Vec3( 0.0f );
+	m_uniformBlock.color = Vec3( 1.0f );
+	m_uniformBlock.direction = Vec3( 1.0f, 0.0f, 0.0f );
+	m_uniformBlock.angle = cos( to_radians( 90.0f ) / 2.0f );
+	m_uniformBlock.light_radius = 0.5f;	
+	m_uniformBlock.brightness = 1.0f;
+	m_uniformBlock.max_radius = MaxAttenuationDist();
+	m_uniformBlock.dir_radius = m_uniformBlock.max_radius / 2.0f;
+	m_uniformBlock.shadowIdx = -1;
+	m_boundsUniformBlock = LightEffectStorage();
+	lightEffectStorage_cached = false;
 }
 
 /*
@@ -134,7 +144,7 @@ Light::DebugDraw
 	-Draws debug light model and depth shadow atlas
 ================================
 */
-void Light::DebugDraw( Camera * camera, const float * view, const float * projection ) {
+void Light::DebugDraw( Camera * camera, const float * view, const float * projection, int mode ) {
 	assert(  s_depthBufferAtlas.GetID() != 0 );
 
 	//***********************
@@ -142,9 +152,9 @@ void Light::DebugDraw( Camera * camera, const float * view, const float * projec
 	//***********************
 	//calculate model matrix
 	Mat4 translation = Mat4();
-	translation.Translate( m_position );
+	translation.Translate( m_uniformBlock.position );
 
-	Vec3 camToLight = ( camera->m_position - m_position );
+	Vec3 camToLight = ( camera->m_position - m_uniformBlock.position );
 	float dist = camToLight.length() * 0.05f;
 
 	Mat4 scale = Mat4();
@@ -153,34 +163,48 @@ void Light::DebugDraw( Camera * camera, const float * view, const float * projec
 	}
 
 	Vec3 axis = Vec3( 1.0, 0.0, 0.0 );
-	Vec3 crossVec = axis.cross( m_direction );
+	Vec3 crossVec = axis.cross( m_uniformBlock.direction );
 	if( crossVec.length() <= EPSILON ) {
 		axis = Vec3( 1.0f, 1.0f, 0.0f );
 		axis.normalize();
-		crossVec = axis.cross( m_direction );
+		crossVec = axis.cross( m_uniformBlock.direction );
 		crossVec.normalize();
 	}
 	Mat4 rotation = Mat4();
 	if ( TypeIndex() != 3 ) { //point light
 		rotation[0] = Vec4( crossVec, 0.0 );
-		rotation[1] = Vec4( m_direction, 0.0 );
-		rotation[2] = Vec4( m_direction.cross( crossVec ).normal(), 0.0 );
+		rotation[1] = Vec4( m_uniformBlock.direction, 0.0 );
+		rotation[2] = Vec4( m_uniformBlock.direction.cross( crossVec ).normal(), 0.0 );
 		rotation[3] = Vec4( 0.0, 0.0, 0.0, 1.0 );
 	}
 		
-	const Mat4 model = translation * rotation * scale;
+	Mat4 model = translation * rotation * scale;
 
 	//pass uniforms to shader
 	s_debugShader->UseProgram();
 	s_debugShader->SetUniformMatrix4f( "view", 1, false, view );
 	s_debugShader->SetUniformMatrix4f( "model", 1, false, model.as_ptr() );
 	s_debugShader->SetUniformMatrix4f( "projection", 1, false, projection );
-	s_debugShader->SetUniform3f( "color", 1, m_color.as_ptr() );
+	s_debugShader->SetUniform3f( "color", 1, m_uniformBlock.color.as_ptr() );
 		
 	//render debug light model
 	Mesh * debugModel = GetDebugMesh();
 	glBindVertexArray( debugModel->m_surfaces[0]->VAO );
 	glDrawElements( GL_TRIANGLES, debugModel->m_surfaces[0]->triCount * 3, GL_UNSIGNED_INT, 0 );
+
+
+	//***********************
+	//Render light effect bounds
+	//***********************	
+	Mat4 ident = Mat4();
+	s_debugShader->SetUniformMatrix4f( "model", 1, false, ident.as_ptr() ); //reuse the s_debugShader
+
+	glPolygonMode( GL_FRONT_AND_BACK, GL_LINE ); //draw wireframe
+	glDisable( GL_CULL_FACE ); //disable backface culling
+	glBindVertexArray( m_debugModel_VAO );
+	glDrawElements( GL_TRIANGLES, m_boundsUniformBlock.tCount * 3, GL_UNSIGNED_INT, 0 );
+	glPolygonMode( GL_FRONT_AND_BACK, GL_FILL ); //draw regular
+	glEnable( GL_CULL_FACE ); //enable backface culling
 
 
 	//***********************
@@ -192,8 +216,10 @@ void Light::DebugDraw( Camera * camera, const float * view, const float * projec
 	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE );
 	glBindTexture( GL_TEXTURE_2D, 0 );
 
-	//draw depth attachement to a quad on the screen
-	s_depthBufferAtlas.Draw( s_depthBufferAtlas.m_attachements[0] );
+	if ( mode < 2 ) { //cvar takes arg. if set to 2, dont draw the depthatlas
+		//draw depth attachement to a quad on the screen
+		s_depthBufferAtlas.Draw( s_depthBufferAtlas.m_attachements[0] );
+	}
 }
 
 /*
@@ -206,7 +232,7 @@ void Light::UpdateDepthBuffer( Scene * scene ) {
 	assert(  s_depthBufferAtlas.GetID() != 0 );
 
 	s_depthBufferAtlas.Bind();
-	if ( m_shadowIndex == 0 ) {
+	if ( m_uniformBlock.shadowIdx == 0 ) {
 		glClear( GL_DEPTH_BUFFER_BIT ); //Clear previous frame values
 	}
 
@@ -215,9 +241,9 @@ void Light::UpdateDepthBuffer( Scene * scene ) {
 
 	//set rendering for this light's portion of the depthBufferAtlas
 	const float mapsPerRow = ceil( sqrt( ( float )s_shadowCastingLightCount ) );
-	float currentRow = floor( ( float )m_shadowIndex / mapsPerRow );
+	float currentRow = floor( ( float )m_uniformBlock.shadowIdx / mapsPerRow );
 	unsigned int stepsUp = ( unsigned int )currentRow;
-	unsigned int stepsRight = m_shadowIndex - ( unsigned int )( mapsPerRow * currentRow );
+	unsigned int stepsRight = m_uniformBlock.shadowIdx - ( unsigned int )( mapsPerRow * currentRow );
 	glViewport( stepsRight * s_partitionSize, stepsUp * s_partitionSize, s_partitionSize, s_partitionSize );
 
 	//store the position of this shadowMap in the shadowMapAtlas
@@ -239,19 +265,100 @@ void Light::UpdateDepthBuffer( Scene * scene ) {
 
 /*
 ================================
+Light::SetRadius
+	-radius of lightsource (size of the lightbulb)
+================================
+*/
+void Light::SetRadius( float radius ) {
+	m_uniformBlock.light_radius = radius;
+	const float att = MaxAttenuationDist();
+	m_far_plane = att;
+	if ( m_uniformBlock.max_radius >= att ) {
+		m_uniformBlock.max_radius = att;
+	}
+}
+
+/*
+================================
+Light::SetRadius
+	-artificially shortens the distance of a lights effect
+================================
+*/
+void Light::SetMaxRadius( float radius ) {
+	const float att = MaxAttenuationDist();
+	if ( radius <= att ) {
+		m_uniformBlock.max_radius = radius;
+		m_far_plane = radius;
+	} else {
+		m_uniformBlock.max_radius = att;
+	}
+}
+
+/*
+================================
+Light::MaxAttenuationDist
+	-init returns the farthest the light can illuminate by using light attenuation
+================================
+*/
+float Light::MaxAttenuationDist() const {
+	float maxDist = sqrt( m_uniformBlock.brightness / s_lightAttenuationBias ) - 1.0f;
+	maxDist *= GetRadius();
+	return maxDist;
+}
+
+/*
+================================
 Light::SetShadows
 ================================
 */
 void Light::SetShadow( const bool shadowCasting ) {	
 	if ( shadowCasting && !m_shadowCaster ) {
 		//give shadowcasting lights an index in the atlas
-		m_shadowIndex = ( int )s_shadowCastingLightCount;
+		m_uniformBlock.shadowIdx = ( int )s_shadowCastingLightCount;
 		s_shadowCastingLightCount += 1;
 	} else if ( !shadowCasting && m_shadowCaster ) {
-		m_shadowIndex = -1;
+		m_uniformBlock.shadowIdx = -1;
 		s_shadowCastingLightCount -= 1;
 	}
 	m_shadowCaster = shadowCasting;
+}
+
+/*
+================================
+Light::PassUniforms
+================================
+*/
+void Light::PassUniforms( Shader * shader, int idx ) const {
+	const GLsizeiptr size = sizeof( LightStorage );	
+
+	//fetch the buffer object from the shader. If its not present, the create and add it.
+	const int block_index = shader->BufferBlockIndexByName( "light_buffer" );
+	Buffer * ssbo = NULL;
+	if ( block_index == GL_INVALID_INDEX ) {
+		//create it if it doesnt exist
+		const GLsizeiptr totalSize = s_lightCount * size;
+		ssbo = ssbo->GetBuffer( "light_buffer" );
+		ssbo->Initialize( totalSize, NULL, GL_DYNAMIC_READ );
+		shader->AddBuffer( ssbo );
+	} else {
+		ssbo = shader->BufferByBlockIndex( block_index );
+	}
+
+	//copy uniform data into this lights region of the buffer
+	const GLintptr offset = idx * size;	
+	glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
+	glBindBufferBase( GL_SHADER_STORAGE_BUFFER, ssbo->GetBindingPoint(), ssbo->GetID() );
+	glBufferSubData( GL_SHADER_STORAGE_BUFFER, offset, size, &m_uniformBlock );
+	glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
+
+	//if shadowcasting copy shadow data
+	if ( m_uniformBlock.shadowIdx > -1 ) {
+		char str2[16];
+		sprintf( str2, "shadows[%d].", m_uniformBlock.shadowIdx );
+		Str shadowStructPrefix = Str( str2 );
+		shader->SetUniformMatrix4f( ( shadowStructPrefix + Str( "matrix" ) ).c_str(), 1, false, m_xfrm.as_ptr() );
+		shader->SetUniform2f( ( shadowStructPrefix + Str( "loc" ) ).c_str(), 1, m_PosInShadowAtlas.as_ptr() );
+	}
 }
 
 /*
@@ -269,13 +376,156 @@ void Light::PassDepthAttribute( Shader* shader, const unsigned int slot ) const 
 	shader->SetAndBindUniformTexture( "shadowAtlas", slot, GL_TEXTURE_2D, s_depthBufferAtlas.m_attachements[0] );
 }
 
+float distanceToPlane( Vec3 v, Vec3 N, Vec3 P ) {
+	return N.dot( v - P );
+}
+
+void Light::InitBoundsVolume() {
+	//create the boundMVPs
+	m_boundsUniformBlock.vCount = 8;
+	m_boundsUniformBlock.tCount = 12;	
+	
+	m_boundsUniformBlock.vPos[0] = Vec3( -1.0f, -1.0f, -1.0f );
+	m_boundsUniformBlock.vPos[1] = Vec3( -1.0f, 1.0f, -1.0f );
+	m_boundsUniformBlock.vPos[2] = Vec3( 1.0f, 1.0f, -1.0f );
+	m_boundsUniformBlock.vPos[3] = Vec3( 1.0f, -1.0f, -1.0f );
+	m_boundsUniformBlock.vPos[4] = Vec3( -1.0f, -1.0f, 1.0f );
+	m_boundsUniformBlock.vPos[5] = Vec3( -1.0f, 1.0f, 1.0f );
+	m_boundsUniformBlock.vPos[6] = Vec3( 1.0f, 1.0f, 1.0f );
+	m_boundsUniformBlock.vPos[7] = Vec3( 1.0f, -1.0f, 1.0f );	
+
+	m_boundsUniformBlock.tris[0] = Tri{ 4, 7, 5 };
+	m_boundsUniformBlock.tris[1] = Tri{ 6, 5, 7 };
+	m_boundsUniformBlock.tris[2] = Tri{ 7, 4, 3 };
+	m_boundsUniformBlock.tris[3] = Tri{ 0, 3, 4 };
+	m_boundsUniformBlock.tris[4] = Tri{ 6, 7, 2 };
+	m_boundsUniformBlock.tris[5] = Tri{ 3, 2, 7 };
+	m_boundsUniformBlock.tris[6] = Tri{ 5, 6, 1 };
+	m_boundsUniformBlock.tris[7] = Tri{ 2, 1, 6 };
+	m_boundsUniformBlock.tris[8] = Tri{ 4, 5, 0 };
+	m_boundsUniformBlock.tris[9] = Tri{ 1, 0, 5 };
+	m_boundsUniformBlock.tris[10] = Tri{ 0, 1, 3 };
+	m_boundsUniformBlock.tris[11] = Tri{ 2, 3, 1 };
+}
+
+/*
+================================
+Light::InitLightEffectStorage
+	-calculate the max bounds of light effect
+================================
+*/
+void Light::InitLightEffectStorage() {
+	//makes sure bounds are calculated only once.
+	if ( lightEffectStorage_cached ) {
+		return;
+	}
+	lightEffectStorage_cached = true;
+
+	//build normalized volume
+	InitBoundsVolume();
+	if ( TypeIndex() == 1 ) { //directional light
+		m_boundsUniformBlock.vPos[0].y = 0.0f;
+		m_boundsUniformBlock.vPos[3].y = 0.0f;
+		m_boundsUniformBlock.vPos[4].y = 0.0f;
+		m_boundsUniformBlock.vPos[7].y = 0.0f;
+	} else if ( TypeIndex() == 2 ) { //spot light
+		m_boundsUniformBlock.vPos[0] = Vec3( -0.001f, 0.0f, -0.001f );
+		m_boundsUniformBlock.vPos[3] = Vec3( 0.001f, 0.0f, -0.001f );
+		m_boundsUniformBlock.vPos[4] = Vec3( -0.001f, 0.0f, 0.001f );
+		m_boundsUniformBlock.vPos[7] = Vec3( 0.001f, 0.0f, 0.001f );
+
+		const float normalizedWidth = atanf( m_uniformBlock.angle );
+		m_boundsUniformBlock.vPos[1] = Vec3( -normalizedWidth, 1.0f, -normalizedWidth );
+		m_boundsUniformBlock.vPos[2] = Vec3( normalizedWidth, 1.0f, -normalizedWidth );
+		m_boundsUniformBlock.vPos[5] = Vec3( -normalizedWidth, 1.0f, normalizedWidth );
+		m_boundsUniformBlock.vPos[6] = Vec3( normalizedWidth, 1.0f, normalizedWidth );	
+	}
+
+	//transform it to light position, orientation, and size
+	Mat4 translation = Mat4();
+	translation.Translate( m_uniformBlock.position );
+
+	Mat4 scale = Mat4();
+	const float maxDist = GetMaxRadius();
+	for ( int i = 0; i < 3; i++ ) {
+		scale[i][i] = maxDist;
+	}
+
+	Vec3 axis = Vec3( 1.0, 0.0, 0.0 );
+	Vec3 crossVec = axis.cross( m_uniformBlock.direction );
+	if( crossVec.length() <= EPSILON ) {
+		axis = Vec3( 1.0f, 1.0f, 0.0f );
+		axis.normalize();
+		crossVec = axis.cross( m_uniformBlock.direction );
+		crossVec.normalize();
+	}
+	Mat4 rotation = Mat4();
+	if ( TypeIndex() != 3 ) { //point light
+		rotation[0] = Vec4( crossVec, 0.0 );
+		rotation[1] = Vec4( m_uniformBlock.direction, 0.0 );
+		rotation[2] = Vec4( m_uniformBlock.direction.cross( crossVec ).normal(), 0.0 );
+		rotation[3] = Vec4( 0.0, 0.0, 0.0, 1.0 );
+	}
+		
+	Mat4 lightMat = translation * rotation * scale;
+	for ( unsigned int i = 0; i < m_boundsUniformBlock.vCount; i++ ) {
+		m_boundsUniformBlock.vPos[i] *= lightMat;
+	}
+
+	//create VAO to render light bounds as geo in debug view
+    unsigned int VBO, EBO;
+    glGenVertexArrays( 1, &m_debugModel_VAO );
+    glGenBuffers( 1, &VBO );
+    glGenBuffers( 1, &EBO );
+
+    glBindVertexArray( m_debugModel_VAO );
+    glBindBuffer( GL_ARRAY_BUFFER, VBO );
+    glBufferData( GL_ARRAY_BUFFER, sizeof( m_boundsUniformBlock.vPos ), m_boundsUniformBlock.vPos, GL_STATIC_DRAW );
+
+    glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, EBO );
+    glBufferData( GL_ELEMENT_ARRAY_BUFFER, sizeof( m_boundsUniformBlock.tris ), m_boundsUniformBlock.tris, GL_STATIC_DRAW );
+
+    glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof( float ), ( void * )0 );
+    glEnableVertexAttribArray( 0 );
+}
+
+/*
+================================
+Light::PassPrepassUniforms
+	-Pass oriented light bbox to tile binning compute shader
+================================
+*/
+void Light::PassPrepassUniforms( Shader* shader, int idx ) const {
+	//fetch the buffer object from the shader. If its not present, the create and add it.
+	const int block_index = shader->BufferBlockIndexByName( "lightEffect_buffer" );
+	Buffer * ssbo = NULL;
+	const GLsizeiptr size = sizeof( LightEffectStorage );
+	const GLsizeiptr totalSize = s_lightCount * size;
+	if ( block_index == GL_INVALID_INDEX ) {
+		//create it if it doesnt exist		
+		ssbo = ssbo->GetBuffer( "lightEffect_buffer" );
+		ssbo->Initialize( totalSize, NULL, GL_DYNAMIC_READ );
+		shader->AddBuffer( ssbo );
+	} else {
+		ssbo = shader->BufferByBlockIndex( block_index );
+	}
+
+	//copy uniform data into this lights region of the buffer
+	const GLintptr offset = idx * size;	
+	glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
+	glBindBufferBase( GL_SHADER_STORAGE_BUFFER, ssbo->GetBindingPoint(), ssbo->GetID() );
+	glBufferSubData( GL_SHADER_STORAGE_BUFFER, offset, size, &m_boundsUniformBlock );
+	glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
+}
+
 /*
 ================================
 DirectionalLight::DirectionalLight
 ================================
 */
 DirectionalLight::DirectionalLight() {
-	if ( s_debugModel_directional.m_name.Initialized() ) {
+	m_uniformBlock.typeIndex = 1;
+	if ( s_debugModel_directional.m_name.Initialized() == false ) {
 		s_debugModel_directional.LoadOBJFromFile( "data\\model\\system\\light\\directionalLight.obj" );
 		s_debugModel_directional.LoadVAO( 0 );
 	}
@@ -294,15 +544,15 @@ const float * DirectionalLight::LightMatrix() {
 
 	//set up view matrix
 	Vec3 up = Vec3( 0.0f, 1.0f, 0.0f );
-	Vec3 right = m_direction.cross( up );
+	Vec3 right = m_uniformBlock.direction.cross( up );
 	if ( right.length() <= EPSILON ) {
 		up = Vec3( 1.0f, 0.0f, 0.0f );
-		right = m_direction.cross( up );
+		right = m_uniformBlock.direction.cross( up );
 	}
-	up = right.cross( m_direction );
-	Vec3 eye = m_position + m_direction;
+	up = right.cross( m_uniformBlock.direction );
+	Vec3 eye = m_uniformBlock.position + m_uniformBlock.direction;
 	Mat4 view = Mat4();
-	view.LookAt( m_position, eye, up );
+	view.LookAt( m_uniformBlock.position, eye, up );
 
 	//update member
 	m_xfrm = projection * view;
@@ -312,47 +562,15 @@ const float * DirectionalLight::LightMatrix() {
 
 /*
 ================================
-DirectionalLight::PassUniforms
-================================
-*/
-void DirectionalLight::PassUniforms( Shader * shader, int idx ) const {
-	char str[16];
-	sprintf( str, "lights[%d].", idx );
-	Str structPrefix = Str( str );
-
-	const int typeIndex = ( int )( TypeIndex() );
-	const float temp = 0.0f;
-	const int shadowIdx = GetShadowIndex();
-
-	shader->SetUniform1i( ( structPrefix + Str( "typeIndex" ) ).c_str(), 1, &typeIndex );
-	shader->SetUniform3f( ( structPrefix + Str( "position" ) ).c_str(), 1, m_position.as_ptr() );
-	shader->SetUniform3f( ( structPrefix + Str( "color" ) ).c_str(), 1, m_color.as_ptr() );
-	shader->SetUniform3f( ( structPrefix + Str( "direction" ) ).c_str(), 1, m_direction.as_ptr() );	
-	shader->SetUniform1f( ( structPrefix + Str( "angle" ) ).c_str(), 1, &temp ); //not needed
-	shader->SetUniform1f( ( structPrefix + Str( "radius" ) ).c_str(), 1, &m_radius );
-	shader->SetUniform1i( ( structPrefix + Str( "shadowIdx" ) ).c_str(), 1, &shadowIdx );
-
-	if ( m_shadowIndex > -1 ) {
-		char str2[16];
-		sprintf( str2, "shadows[%d].", m_shadowIndex );
-		Str shadowStructPrefix = Str( str2 );
-		shader->SetUniformMatrix4f( ( shadowStructPrefix + Str( "matrix" ) ).c_str(), 1, false, m_xfrm.as_ptr() );
-		shader->SetUniform2f( ( shadowStructPrefix + Str( "loc" ) ).c_str(), 1, m_PosInShadowAtlas.as_ptr() );
-	}
-}
-
-/*
-================================
-DirectionalLight::DirectionalLight
+SpotLight::SpotLight
 ================================
 */
 SpotLight::SpotLight() {
-	if ( s_debugModel_spot.m_name.Initialized() ) {
+	m_uniformBlock.typeIndex = 2;
+	if ( s_debugModel_spot.m_name.Initialized() == false ) {
 		s_debugModel_spot.LoadOBJFromFile( "data\\model\\system\\light\\spotLight.obj" );
 		s_debugModel_spot.LoadVAO( 0 );
 	}
-	m_radius = 4.0;
-	m_angle = to_radians( 90.0f );
 }
 
 /*
@@ -365,19 +583,19 @@ const float * SpotLight::LightMatrix() {
 	//set up perspective projection
 	const float aspect = 1.0f;
 	Mat4 projection = Mat4();
-	projection.Perspective( m_angle, aspect, m_near_plane, m_far_plane );
+	projection.Perspective( GetAngle(), aspect, m_near_plane, m_far_plane );
 
 	//set up view matrix
 	Vec3 up = Vec3( 0.0f, 1.0f, 0.0f );
-	Vec3 right = m_direction.cross( up );
+	Vec3 right = m_uniformBlock.direction.cross( up );
 	if ( right.length() <= EPSILON ) {
 		up = Vec3( 1.0f, 0.0f, 0.0f );
-		right = m_direction.cross( up );
+		right = m_uniformBlock.direction.cross( up );
 	}
-	up = right.cross( m_direction );
-	Vec3 eye = m_position + m_direction;
+	up = right.cross( m_uniformBlock.direction );
+	Vec3 eye = m_uniformBlock.position + m_uniformBlock.direction;
 	Mat4 view = Mat4();
-	view.LookAt( m_position, eye, up );
+	view.LookAt( m_uniformBlock.position, eye, up );
 
 	//update member
 	m_xfrm = projection * view;
@@ -387,46 +605,15 @@ const float * SpotLight::LightMatrix() {
 
 /*
 ================================
-SpotLight::PassUniforms
-================================
-*/
-void SpotLight::PassUniforms( Shader * shader, int idx ) const {
-	char str[16];
-	sprintf( str, "lights[%d].", idx );
-	Str structPrefix = Str( str );
-
-	const int typeIndex = ( int )( TypeIndex() );
-	const float lightAngle_cosine = cos( m_angle / 2.0f ); //passing in cos so we dont have to do it in the fragment shader
-	const int shadowIdx = GetShadowIndex();
-
-	shader->SetUniform1i( ( structPrefix + Str( "typeIndex" ) ).c_str(), 1, &typeIndex );
-	shader->SetUniform3f( ( structPrefix + Str( "position" ) ).c_str(), 1, m_position.as_ptr() );
-	shader->SetUniform3f( ( structPrefix + Str( "color" ) ).c_str(), 1, m_color.as_ptr() );
-	shader->SetUniform3f( ( structPrefix + Str( "direction" ) ).c_str(), 1, m_direction.as_ptr() );
-	shader->SetUniform1f( ( structPrefix + Str( "angle" ) ).c_str(), 1, &lightAngle_cosine );
-	shader->SetUniform1f( ( structPrefix + Str( "radius" ) ).c_str(), 1, &m_radius );	
-	shader->SetUniform1i( ( structPrefix + Str( "shadowIdx" ) ).c_str(), 1, &shadowIdx );
-
-	if ( m_shadowIndex > -1 ) {
-		char str2[16];
-		sprintf( str2, "shadows[%d].", m_shadowIndex );
-		Str shadowStructPrefix = Str( str2 );
-		shader->SetUniformMatrix4f( ( shadowStructPrefix + Str( "matrix" ) ).c_str(), 1, false, m_xfrm.as_ptr() );
-		shader->SetUniform2f( ( shadowStructPrefix + Str( "loc" ) ).c_str(), 1, m_PosInShadowAtlas.as_ptr() );
-	}
-}
-
-/*
-================================
 PointLight::PointLight
 ================================
 */
 PointLight::PointLight() {
-	if ( s_debugModel_point.m_name.Initialized() ) {
+	m_uniformBlock.typeIndex = 3;
+	if ( s_debugModel_point.m_name.Initialized() == false ) {
 		s_debugModel_point.LoadOBJFromFile( "data\\model\\system\\light\\light.obj" );
 		s_debugModel_point.LoadVAO( 0 );
 	}
-	m_radius = 4.0;
 }
 
 /*
@@ -437,10 +624,10 @@ PointLight::SetShadow
 void PointLight::SetShadow( const bool shadowCasting ) {	
 	if ( shadowCasting && !m_shadowCaster ) {
 		//give shadowcasting lights an index in the atlas
-		m_shadowIndex = ( int )s_shadowCastingLightCount;
+		m_uniformBlock.shadowIdx = ( int )s_shadowCastingLightCount;
 		s_shadowCastingLightCount += 6;
 	} else if ( !shadowCasting && m_shadowCaster ) {
-		m_shadowIndex = -1;
+		m_uniformBlock.shadowIdx = -1;
 		s_shadowCastingLightCount -= 6;
 	}
 	m_shadowCaster = shadowCasting;
@@ -474,9 +661,9 @@ const float * PointLight::LightMatrix() {
 			right = dirs[i].cross( up );
 		}
 		up = right.cross( dirs[i] );
-		Vec3 eye = m_position + dirs[i];
+		Vec3 eye = m_uniformBlock.position + dirs[i];
 		Mat4 view = Mat4();
-		view.LookAt( m_position, eye, up );
+		view.LookAt( m_uniformBlock.position, eye, up );
 
 		//update member
 		m_xfrms[i] = projection * view;
@@ -495,7 +682,7 @@ void PointLight::UpdateDepthBuffer( Scene * scene ) {
 	assert(  s_depthBufferAtlas.GetID() != 0 );
 
 	s_depthBufferAtlas.Bind();
-	if ( m_shadowIndex == 0 ) {
+	if ( m_uniformBlock.shadowIdx == 0 ) {
 		glClear( GL_DEPTH_BUFFER_BIT ); //Clear previous frame values
 	}
 
@@ -505,7 +692,7 @@ void PointLight::UpdateDepthBuffer( Scene * scene ) {
 		s_depthShader->SetUniformMatrix4f( "lightSpaceMatrix", 1, false, m_xfrms[i].as_ptr() );
 
 		//set rendering for this light's portion of the depthBufferAtlas
-		const unsigned int shadowIdx = m_shadowIndex + i;
+		const unsigned int shadowIdx = m_uniformBlock.shadowIdx + i;
 		const float mapsPerRow = ceil( sqrt( ( float )s_shadowCastingLightCount ) );
 		float currentRow = floor( ( float )shadowIdx / mapsPerRow );
 		unsigned int stepsDown = ( unsigned int )currentRow;
@@ -531,7 +718,7 @@ PointLight::GetShadowMapLoc
 ================================
 */
 const Vec2 PointLight::GetShadowMapLoc( unsigned int faceIdx ) const {
-	const unsigned int shadowIdx = m_shadowIndex + faceIdx;
+	const unsigned int shadowIdx = m_uniformBlock.shadowIdx + faceIdx;
 	const float mapsPerRow = ceil( sqrt( ( float )s_shadowCastingLightCount ) );
 	float currentRow = floor( ( float )shadowIdx / mapsPerRow );
 	unsigned int stepsUp = ( unsigned int )currentRow;
@@ -548,26 +735,34 @@ PointLight::PassUniforms
 ================================
 */
 void PointLight::PassUniforms( Shader * shader, int idx ) const {
-	char str[16];
-	sprintf( str, "lights[%d].", idx );
-	Str structPrefix = Str( str );
+	const GLsizeiptr size = sizeof( LightStorage );
 
-	const int typeIndex = ( int )( TypeIndex() );
-	const float temp = 0.0f;
-	const int shadowIdx = GetShadowIndex();
+	//const GLsizeiptr size = sizeof( int ) + sizeof( float ) * 4 + sizeof( float ) * 4 + sizeof( float ) * 4 + sizeof( float ) + sizeof( float ) + sizeof( int );
 
-	shader->SetUniform1i( ( structPrefix + Str( "typeIndex" ) ).c_str(), 1, &typeIndex );
-	shader->SetUniform3f( ( structPrefix + Str( "position" ) ).c_str(), 1, m_position.as_ptr() );
-	shader->SetUniform3f( ( structPrefix + Str( "color" ) ).c_str(), 1, m_color.as_ptr() );
-	shader->SetUniform3f( ( structPrefix + Str( "direction" ) ).c_str(), 1, m_direction.as_ptr() );
-	shader->SetUniform1f( ( structPrefix + Str( "angle" ) ).c_str(), 1, &temp ); //not needed
-	shader->SetUniform1f( ( structPrefix + Str( "radius" ) ).c_str(), 1, &m_radius );	
-	shader->SetUniform1i( ( structPrefix + Str( "shadowIdx" ) ).c_str(), 1, &shadowIdx );
+	//fetch the buffer object from the shader. If its not present, the create and add it.
+	const int block_index = shader->BufferBlockIndexByName( "light_buffer" );
+	Buffer * ssbo = NULL;
+	if ( block_index == GL_INVALID_INDEX ) {
+		//create it if it doesnt exist
+		const GLsizeiptr totalSize = s_lightCount * size;
+		ssbo = ssbo->GetBuffer( "light_buffer" );
+		ssbo->Initialize( totalSize, NULL, GL_DYNAMIC_READ );
+		shader->AddBuffer( ssbo );
+	} else {
+		ssbo = shader->BufferByBlockIndex( block_index );
+	}
 
-	if ( m_shadowIndex > -1 ) {
+	const GLintptr offset = idx * size;	
+	glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
+	glBindBufferBase( GL_SHADER_STORAGE_BUFFER, ssbo->GetBindingPoint(), ssbo->GetID() );
+	glBufferSubData( GL_SHADER_STORAGE_BUFFER, offset, size, &m_uniformBlock );
+	glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
+
+	//if shadowcasting send shadow data
+	if ( m_uniformBlock.shadowIdx > -1 ) {
 		for ( unsigned int i = 0; i < 6; i++ ) {
 			char str2[16];
-			sprintf( str2, "shadows[%d].", m_shadowIndex + i );
+			sprintf( str2, "shadows[%d].", m_uniformBlock.shadowIdx + i );
 			Str shadowStructPrefix = Str( str2 );
 			shader->SetUniformMatrix4f( ( shadowStructPrefix + Str( "matrix" ) ).c_str(), 1, false, m_xfrms[i].as_ptr() );
 			const Vec2 loc = GetShadowMapLoc( i );
@@ -751,6 +946,10 @@ std::vector< unsigned int > EnvProbe::RenderCubemaps( const unsigned int cubemap
 		}
 	}
 
+	//load special shader to render probe
+	Shader * envProbe_shader = new Shader();
+	envProbe_shader = envProbe_shader->GetShader( "cook-torrance-envProbes" );
+
 	//Draw the scene to the main buffer		
 	glViewport( 0, 0, cubemapSize, cubemapSize ); //Set the OpenGL viewport to be the entire size of the window
 	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE ); //Enabling color writing to the frame buffer
@@ -766,31 +965,44 @@ std::vector< unsigned int > EnvProbe::RenderCubemaps( const unsigned int cubemap
 
 			for ( unsigned int j = 0; j < mesh->m_surfaces.size(); j++ ) {
 				matDecl = MaterialDecl::GetMaterialDecl( mesh->m_surfaces[j]->materialName.c_str() );
-				matDecl->BindTextures();
-
-				//pass in camera data
-				matDecl->shader->SetUniformMatrix4f( "view", 1, false, views[faceIdx].as_ptr() );		
-				matDecl->shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
-				matDecl->shader->SetUniform3f( "camPos", 1, m_position.as_ptr() );
 
 				//exit early if this material is errored out
 				if ( matDecl->m_shaderProg == "error" ) {
+					matDecl->BindTextures();
 					mesh->DrawSurface( j ); //draw surface
 					continue;
-				}				
+				}
+
+				//bind textures
+				envProbe_shader->UseProgram();
+				unsigned int slotCount = 0;
+				textureMap::iterator it = matDecl->m_textures.begin();
+				while ( it != matDecl->m_textures.end() ) {
+					std::string uniformName = it->first;
+					Texture* texture = it->second;
+					envProbe_shader->SetAndBindUniformTexture( uniformName.c_str(), slotCount, texture->GetTarget(), texture->GetName() );
+
+					slotCount++;
+					it++;
+				}
+
+				//pass in camera data
+				envProbe_shader->SetUniformMatrix4f( "view", 1, false, views[faceIdx].as_ptr() );		
+				envProbe_shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
+				envProbe_shader->SetUniform3f( "camPos", 1, m_position.as_ptr() );
+				const int lightCount = ( int )( scene->LightCount() );
+				envProbe_shader->SetUniform1i( "lightCount", 1, &lightCount );
 
 				//pass lights data
 				for ( int k = 0; k < scene->LightCount(); k++ ) {
-					if ( k == 0 ) {
-						light->PassDepthAttribute( matDecl->shader, 4 );
-						const int shadowMapPartitionSize = ( unsigned int )( light->s_partitionSize );
-						matDecl->shader->SetUniform1i( "shadowMapPartitionSize", 1, &shadowMapPartitionSize );
-					}
 					scene->LightByIndex( k, &light );
-					light->PassUniforms( matDecl->shader, k );
-				}
-				const int lightCount = ( int )( scene->LightCount() );
-				matDecl->shader->SetUniform1i( "lightCount", 1, &lightCount );				
+					if ( k == 0 ) {
+						light->PassDepthAttribute( envProbe_shader, 4 );
+						const int shadowMapPartitionSize = ( unsigned int )( light->s_partitionSize );
+						envProbe_shader->SetUniform1i( "shadowMapPartitionSize", 1, &shadowMapPartitionSize );
+					}					
+					light->PassUniforms( envProbe_shader, k );
+				}		
 	
 				//draw surface
 				mesh->DrawSurface( j );
@@ -799,10 +1011,17 @@ std::vector< unsigned int > EnvProbe::RenderCubemaps( const unsigned int cubemap
 		fbos[faceIdx].Unbind();
 	}
 
+	//envProbe_shader is only used for rendering light probe cubemaps. Delete it once its nolonger needed
+	envProbe_shader->DeleteProgram();
+	delete envProbe_shader;
+
 	//gather all texture ids from color attachments of the fbos
 	std::vector< unsigned int > textureIDs;
 	for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {	
 		textureIDs.push_back( fbos[faceIdx].m_attachements[0] );
 	}
+
+
+
 	return textureIDs;
 }

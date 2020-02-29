@@ -26,6 +26,7 @@ class Vec2 {
 
 		void operator=( Vec2 other );
 		bool operator==( Vec2 other );
+		bool operator!=( Vec2 other );
 
 		float operator[]( int index ) const;
 		float & operator[]( int index );
@@ -80,6 +81,7 @@ class Vec3 {
 
 		void operator=( Vec3 other );
 		bool operator==( Vec3 other );
+		bool operator!=( Vec3 other );
 
 		float operator[]( int index ) const;
 		float & operator[]( int index );
@@ -135,6 +137,7 @@ class Vec4 {
 
 		void operator=( Vec4 other );
 		bool operator==( Vec4 other );
+		bool operator!=( Vec4 other );
 
 		float operator[]( int index ) const;
 		float & operator[]( int index );

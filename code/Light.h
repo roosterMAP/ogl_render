@@ -9,6 +9,29 @@
 
 class Scene;
 
+struct Tri {
+	unsigned int idx0, idx1, idx2;
+};
+struct LightEffectStorage {
+	unsigned int vCount;
+	unsigned int tCount;
+	Vec3 vPos[8];
+	Tri tris[12];
+};
+
+struct LightStorage {
+	int typeIndex;
+	Vec3 position;
+	Vec3 color;
+	Vec3 direction;
+	float angle; //radians
+	float light_radius;
+	float max_radius;
+	float dir_radius;
+	float brightness;
+	int shadowIdx;
+};
+
 /*
 ==============================
 Light
@@ -20,35 +43,48 @@ class Light {
 
 		virtual unsigned int TypeIndex() const { return 0; }
 
-		void Initialize();		
+		void Initialize();
 
-		void DebugDraw( Camera * camera, const float * view, const float * projection );
+		void DebugDraw( Camera * camera, const float * view, const float * projection, int mode );
 
 		virtual void UpdateDepthBuffer( Scene * scene );
 
 		virtual const float * LightMatrix() { return m_xfrm.as_ptr(); }
 
-		const unsigned int GetShadowIndex() const { return m_shadowIndex; }
+		const unsigned int GetShadowIndex() const { return m_uniformBlock.shadowIdx; }
 
-		const Vec3 GetPosition() const { return m_position; }
-		void SetPosition( Vec3 pos ) { m_position = pos; }
+		const Vec3 GetPosition() const { return m_uniformBlock.position; }
+		void SetPosition( Vec3 pos ) { m_uniformBlock.position = pos; }
 
-		const Vec3 GetColor() const { return m_color; }
-		void SetColor( Vec3 col ) { m_color = col; }
+		const Vec3 GetColor() const { return m_uniformBlock.color; }
+		void SetColor( Vec3 col ) { m_uniformBlock.color = col.normal(); }
 
-		const Vec3 GetDirection() const { return m_direction; }
-		void SetDirection( Vec3 dir ) { m_direction = dir; }
+		const Vec3 GetBrightness() const { return m_uniformBlock.brightness; }
+		void SetBrightness( float brt ) { m_uniformBlock.brightness = brt; }
 
-		const float GetRadius() const { return m_radius; }
-		void SetRadius( float radius ) { m_radius = radius; m_far_plane = radius; }
+		const Vec3 GetDirection() const { return m_uniformBlock.direction; }
+		void SetDirection( Vec3 dir ) { m_uniformBlock.direction = dir; }
+
+		const float GetRadius() const { return m_uniformBlock.light_radius; }
+		void SetRadius( float radius );
+
+		const float GetMaxRadius() const { return m_uniformBlock.max_radius; }
+		void SetMaxRadius( float radius );
 
 		const bool GetShadow() const { return m_shadowCaster; }
 		virtual void SetShadow( const bool shadowCasting );
 
-		virtual void PassUniforms( Shader* shader, int idx ) const {};
+		float MaxAttenuationDist() const;
+
+		void InitLightEffectStorage();
+
+		virtual void PassUniforms( Shader* shader, int idx ) const;
 		void PassDepthAttribute( Shader* shader, const unsigned int slot ) const;
+		void PassPrepassUniforms( Shader* shader, int idx ) const;
 		
 		int m_idx;
+
+		static float s_lightAttenuationBias;
 
 		static unsigned int s_lightCount;
 		static unsigned int s_shadowCastingLightCount;
@@ -62,18 +98,22 @@ class Light {
 		static const unsigned int s_depthBufferAtlasSize_max = 4096;
 
 	protected:
-		Light();		
-		
-		int m_shadowIndex;
+		Light();
+
+		LightStorage m_uniformBlock;
+		LightEffectStorage m_boundsUniformBlock;
 		bool m_shadowCaster;
-		float m_near_plane, m_far_plane, m_radius;
-		Vec3 m_position, m_color, m_direction;
+		float m_near_plane, m_far_plane;
 		Mat4 m_xfrm;
 		Vec2 m_PosInShadowAtlas;
+		bool lightEffectStorage_cached;
+
+		void InitBoundsVolume();
 
 	private:		
 		virtual Mesh * GetDebugMesh() const { return &s_debugModel; }
 		static Mesh s_debugModel;
+		unsigned int m_debugModel_VAO;
 };
 
 
@@ -87,11 +127,12 @@ class DirectionalLight : public Light {
 		DirectionalLight();
 		~DirectionalLight() {};
 
-		unsigned int TypeIndex() const { return 1; }
+		unsigned int TypeIndex() const { return m_uniformBlock.typeIndex; }
+
+		const float GetDirRadius() const { return m_uniformBlock.dir_radius; }
+		void SetDirRadius( float radius ) { m_uniformBlock.dir_radius = radius; }
 
 		const float * LightMatrix();
-
-		void PassUniforms( Shader* shader, int idx ) const;
 
 	private:
 		Mesh * GetDebugMesh() const { return &s_debugModel_directional; }
@@ -109,18 +150,16 @@ class SpotLight : public Light {
 		SpotLight();
 		~SpotLight() {};
 
-		unsigned int TypeIndex() const { return 2; }
+		unsigned int TypeIndex() const { return m_uniformBlock.typeIndex; }
 
 		const float * LightMatrix();
 
-		const float GetAngle() const { return m_angle; }
-		void SetAngle( float radians ) { m_angle = radians; }
-
-		void PassUniforms( Shader* shader, int idx ) const;
+		//cos(angle/2) is an optimization. rather than performing this in the frag shader
+		const float GetAngle() const { return 2.0f * acos( m_uniformBlock.angle ); }
+		void SetAngle( float radians ) { m_uniformBlock.angle = cos( radians / 2.0f ); }
 
 	private:
 		Mesh * GetDebugMesh() const { return &s_debugModel_spot; }
-		float m_angle; //radians
 
 		static Mesh s_debugModel_spot;
 };
@@ -135,7 +174,7 @@ class PointLight : public Light {
 		PointLight();
 		~PointLight() {};
 
-		unsigned int TypeIndex() const { return 3; }
+		unsigned int TypeIndex() const { return m_uniformBlock.typeIndex; }
 
 		void SetShadow( const bool shadowCasting );
 		const Vec2 GetShadowMapLoc( unsigned int faceIdx ) const;

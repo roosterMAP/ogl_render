@@ -35,6 +35,10 @@ bool Vec2::operator==(Vec2 other) {
 	return x == other.x && y == other.y;
 }
 
+bool Vec2::operator!=(Vec2 other) {
+	return x != other.x || y != other.y;
+}
+
 float Vec2::operator[]( int index ) const {
 	if ( index == 0 ) {
 		return x;
@@ -107,62 +111,25 @@ Vec2 Vec2::operator*( float n ) const {
 }
 
 Vec2 Vec2::operator*( Mat2 mat ) const {
-	Vec2 newVec = Vec2();
-	for ( unsigned int i = 0; i < size(); i++ ) {
-		float sum_val = mat[i][0] * x;
-		for ( int j = 1; j < mat.size(); j++ ) {
-			float mat_val;
-			try { mat_val = mat[i][j]; }
-			catch( int e ) { mat_val = 1.0f; }
-
-			float vec_val;
-			try { vec_val = valByIdx( j ); }
-			catch( int e ) { vec_val = 1.0f; }
-
-			sum_val += ( mat_val * vec_val );
-		newVec[i] = sum_val;
-		}
-	}
+	Vec2 newVec;
+	newVec.x = dot( Vec2( mat.m_col1.x, mat.m_col2.x ) );
+	newVec.y = dot( Vec2( mat.m_col1.y, mat.m_col2.y ) );
 	return newVec;
 }
 
 Vec2 Vec2::operator*( Mat3 mat ) const {
-	Vec2 newVec = Vec2();
-	for ( unsigned int i = 0; i < size(); i++ ) {
-		float sum_val = mat[i][0] * x;
-		for ( int j = 1; j < mat.size(); j++ ) {
-			float mat_val;
-			try { mat_val = mat[i][j]; }
-			catch( int e ) { mat_val = 1.0f; }
-
-			float vec_val;
-			try { vec_val = valByIdx( j ); }
-			catch( int e ) { vec_val = 1.0f; }
-
-			sum_val += ( mat_val * vec_val );
-		newVec[i] = sum_val;
-		}
-	}
+	Vec3 oldVec = Vec3( x, y, 1.0f );
+	Vec2 newVec;
+	newVec.x = oldVec.dot( Vec3( mat.m_col1.x, mat.m_col2.x, mat.m_col3.x ) );
+	newVec.y = oldVec.dot( Vec3( mat.m_col1.y, mat.m_col2.y, mat.m_col3.y ) );
 	return newVec;
 }
 
 Vec2 Vec2::operator*( Mat4 mat ) const {
-	Vec2 newVec = Vec2();
-	for ( unsigned int i = 0; i < size(); i++ ) {
-		float sum_val = mat[i][0] * x;
-		for ( int j = 1; j < mat.size(); j++ ) {
-			float mat_val;
-			try { mat_val = mat[i][j]; }
-			catch( int e ) { mat_val = 1.0f; }
-
-			float vec_val;
-			try { vec_val = valByIdx( j ); }
-			catch( int e ) { vec_val = 1.0f; }
-
-			sum_val += ( mat_val * vec_val );
-		newVec[i] = sum_val;
-		}
-	}
+	Vec4 oldVec = Vec4( x, y, 0.0f, 1.0f );
+	Vec2 newVec;
+	newVec.x = oldVec.dot( Vec4( mat.m_col1.x, mat.m_col2.x, mat.m_col3.x, mat.m_col4.x ) );
+	newVec.y = oldVec.dot( Vec4( mat.m_col1.y, mat.m_col2.y, mat.m_col3.y, mat.m_col4.y ) );
 	return newVec;
 }
 
@@ -172,66 +139,20 @@ void Vec2::operator*=( const float n ) {
 }
 
 void Vec2::operator*=( const Mat2 mat ) {
-	Vec2 newVec = Vec2();
-	for ( unsigned int i = 0; i < size(); i++ ) {
-		float sum_val = mat[i][0] * x;
-		for ( int j = 1; j < mat.size(); j++ ) {
-			float mat_val;
-			try { mat_val = mat[i][j]; }
-			catch( int e ) { mat_val = 1.0f; }
-
-			float vec_val;
-			try { vec_val = valByIdx( j ); }
-			catch( int e ) { vec_val = 1.0f; }
-
-			sum_val += ( mat_val * vec_val );
-		newVec[i] = sum_val;
-		}
-	}
-	x = newVec.x;
-	y = newVec.y;
+	x = dot( Vec2( mat.m_col1.x, mat.m_col2.x ) );
+	y = dot( Vec2( mat.m_col1.y, mat.m_col2.y ) );
 }
 
 void Vec2::operator*=( const Mat3 mat ) {
-	Vec2 newVec = Vec2();
-	for ( unsigned int i = 0; i < size(); i++ ) {
-		float sum_val = mat[i][0] * x;
-		for ( int j = 1; j < mat.size(); j++ ) {
-			float mat_val;
-			try { mat_val = mat[i][j]; }
-			catch( int e ) { mat_val = 1.0f; }
-
-			float vec_val;
-			try { vec_val = valByIdx( j ); }
-			catch( int e ) { vec_val = 1.0f; }
-
-			sum_val += ( mat_val * vec_val );
-		newVec[i] = sum_val;
-		}
-	}
-	x = newVec.x;
-	y = newVec.y;
+	Vec3 oldVec = Vec3( x, y, 1.0f );
+	x = oldVec.dot( Vec3( mat.m_col1.x, mat.m_col2.x, mat.m_col3.x ) );
+	y = oldVec.dot( Vec3( mat.m_col1.y, mat.m_col2.y, mat.m_col3.y ) );
 }
 
 void Vec2::operator*=( const Mat4 mat ) {
-	Vec2 newVec = Vec2();
-	for ( unsigned int i = 0; i < size(); i++ ) {
-		float sum_val = mat[i][0] * x;
-		for ( int j = 1; j < mat.size(); j++ ) {
-			float mat_val;
-			try { mat_val = mat[i][j]; }
-			catch( int e ) { mat_val = 1.0f; }
-
-			float vec_val;
-			try { vec_val = valByIdx( j ); }
-			catch( int e ) { vec_val = 1.0f; }
-
-			sum_val += ( mat_val * vec_val );
-		newVec[i] = sum_val;
-		}
-	}
-	x = newVec.x;
-	y = newVec.y;
+	Vec4 oldVec = Vec4( x, y, 0.0f, 1.0f );
+	x = oldVec.dot( Vec4( mat.m_col1.x, mat.m_col2.x, mat.m_col3.x, mat.m_col4.x ) );
+	y = oldVec.dot( Vec4( mat.m_col1.y, mat.m_col2.y, mat.m_col3.y, mat.m_col4.y ) );
 }
 
 Vec2 Vec2::operator/( float n ) const {
@@ -340,6 +261,10 @@ bool Vec3::operator==(Vec3 other) {
 	return x == other.x && y == other.y && z == other.z;
 }
 
+bool Vec3::operator!=(Vec3 other) {
+	return x != other.x || y != other.y || z != other.z;
+}
+
 float Vec3::operator[]( int index ) const {
 	if ( index == 0 ) {
 		return x;
@@ -425,42 +350,20 @@ Vec3 Vec3::operator*( float n ) const {
 }
 
 Vec3 Vec3::operator*( Mat3 mat ) const {
-	Vec3 newVec = Vec3();
-	for ( unsigned int i = 0; i < size(); i++ ) {
-		float sum_val = mat[i][0] * x;
-		for ( int j = 1; j < mat.size(); j++ ) {
-			float mat_val;
-			try { mat_val = mat[i][j]; }
-			catch( int e ) { mat_val = 1.0f; }
-
-			float vec_val;
-			try { vec_val = valByIdx( j ); }
-			catch( int e ) { vec_val = 1.0f; }
-
-			sum_val += ( mat_val * vec_val );
-		newVec[i] = sum_val;
-		}
-	}
+	Vec3 oldVec = Vec3( x, y, z );
+	Vec3 newVec;
+	newVec.x = oldVec.dot( Vec3( mat.m_col1.x, mat.m_col2.x, mat.m_col3.x ) );
+	newVec.y = oldVec.dot( Vec3( mat.m_col1.y, mat.m_col2.y, mat.m_col3.y ) );
+	newVec.z = oldVec.dot( Vec3( mat.m_col1.z, mat.m_col2.z, mat.m_col3.z ) );
 	return newVec;
 }
 
 Vec3 Vec3::operator*( Mat4 mat ) const {
-	Vec3 newVec = Vec3();
-	for ( unsigned int i = 0; i < size(); i++ ) {
-		float sum_val = mat[i][0] * x;
-		for ( int j = 1; j < mat.size(); j++ ) {
-			float mat_val;
-			try { mat_val = mat[i][j]; }
-			catch( int e ) { mat_val = 1.0f; }
-
-			float vec_val;
-			try { vec_val = valByIdx( j ); }
-			catch( int e ) { vec_val = 1.0f; }
-
-			sum_val += ( mat_val * vec_val );
-		newVec[i] = sum_val;
-		}
-	}
+	Vec4 oldVec = Vec4( x, y, z, 1.0f );
+	Vec3 newVec;
+	newVec.x = oldVec.dot( Vec4( mat.m_col1.x, mat.m_col2.x, mat.m_col3.x, mat.m_col4.x ) );
+	newVec.y = oldVec.dot( Vec4( mat.m_col1.y, mat.m_col2.y, mat.m_col3.y, mat.m_col4.y ) );
+	newVec.z = oldVec.dot( Vec4( mat.m_col1.z, mat.m_col2.z, mat.m_col3.z, mat.m_col4.z ) );
 	return newVec;
 }
 
@@ -471,47 +374,17 @@ void Vec3::operator*=( const float n ) {
 }
 
 void Vec3::operator*=( const Mat3 mat ) {
-	Vec3 newVec = Vec3();
-	for ( unsigned int i = 0; i < size(); i++ ) {
-		float sum_val = mat[i][0] * x;
-		for ( int j = 1; j < mat.size(); j++ ) {
-			float mat_val;
-			try { mat_val = mat[i][j]; }
-			catch( int e ) { mat_val = 1.0f; }
-
-			float vec_val;
-			try { vec_val = valByIdx( j ); }
-			catch( int e ) { vec_val = 1.0f; }
-
-			sum_val += ( mat_val * vec_val );
-		newVec[i] = sum_val;
-		}
-	}
-	x = newVec.x;
-	y = newVec.y;
-	z = newVec.z;
+	Vec3 newVec = Vec3( x, y, z );
+	x = newVec.dot( Vec3( mat.m_col1.x, mat.m_col2.x, mat.m_col3.x ) );
+	y = newVec.dot( Vec3( mat.m_col1.y, mat.m_col2.y, mat.m_col3.y ) );
+	z = newVec.dot( Vec3( mat.m_col1.z, mat.m_col2.z, mat.m_col3.z ) );
 }
 
 void Vec3::operator*=( const Mat4 mat ) {
-	Vec3 newVec = Vec3();
-	for ( unsigned int i = 0; i < size(); i++ ) {
-		float sum_val = mat[i][0] * x;
-		for ( int j = 1; j < mat.size(); j++ ) {
-			float mat_val;
-			try { mat_val = mat[i][j]; }
-			catch( int e ) { mat_val = 1.0f; }
-
-			float vec_val;
-			try { vec_val = valByIdx( j ); }
-			catch( int e ) { vec_val = 1.0f; }
-
-			sum_val += ( mat_val * vec_val );
-		newVec[i] = sum_val;
-		}
-	}
-	x = newVec.x;
-	y = newVec.y;
-	z = newVec.z;
+	Vec4 newVec = Vec4( x, y, z, 1.0f );
+	x = newVec.dot( Vec4( mat.m_col1.x, mat.m_col2.x, mat.m_col3.x, mat.m_col4.x ) );
+	y = newVec.dot( Vec4( mat.m_col1.y, mat.m_col2.y, mat.m_col3.y, mat.m_col4.y ) );
+	z = newVec.dot( Vec4( mat.m_col1.z, mat.m_col2.z, mat.m_col3.z, mat.m_col4.z ) );
 }
 
 Vec3 Vec3::operator/( const float n ) const {
@@ -642,6 +515,10 @@ bool Vec4::operator==( Vec4 other ) {
 	return x == other.x && y == other.y && z == other.z && w == other.w;
 }
 
+bool Vec4::operator!=( Vec4 other ) {
+	return x != other.x || y != other.y || z != other.z || w != other.w;
+}
+
 float Vec4::operator[]( int index ) const {
 	if ( index == 0 ) {
 		return x;
@@ -740,22 +617,11 @@ Vec4 Vec4::operator*( float n ) const {
 }
 
 Vec4 Vec4::operator*( Mat4 mat ) const {
-	Vec4 newVec = Vec4();
-	for ( unsigned int i = 0; i < size(); i++ ) {
-		float sum_val = mat[i][0] * x;
-		for ( int j = 1; j < mat.size(); j++ ) {
-			float mat_val;
-			try { mat_val = mat[i][j]; }
-			catch( int e ) { mat_val = 1.0f; }
-
-			float vec_val;
-			try { vec_val = valByIdx( j ); }
-			catch( int e ) { vec_val = 1.0f; }
-
-			sum_val += ( mat_val * vec_val );
-		newVec[i] = sum_val;
-		}
-	}
+	Vec4 newVec;
+	newVec.x = dot( Vec4( mat.m_col1.x, mat.m_col2.x, mat.m_col3.x, mat.m_col4.x ) );
+	newVec.y = dot( Vec4( mat.m_col1.y, mat.m_col2.y, mat.m_col3.y, mat.m_col4.y ) );
+	newVec.z = dot( Vec4( mat.m_col1.z, mat.m_col2.z, mat.m_col3.z, mat.m_col4.z ) );
+	newVec.w = dot( Vec4( mat.m_col1.w, mat.m_col2.w, mat.m_col3.w, mat.m_col4.w ) );
 	return newVec;
 }
 
@@ -767,26 +633,10 @@ void Vec4::operator*=( const float n ) {
 }
 
 void Vec4::operator*=( const Mat4 mat ) {
-	Vec4 newVec = Vec4();
-	for ( unsigned int i = 0; i < size(); i++ ) {
-		float sum_val = mat[i][0] * x;
-		for ( int j = 1; j < mat.size(); j++ ) {
-			float mat_val;
-			try { mat_val = mat[i][j]; }
-			catch( int e ) { mat_val = 1.0f; }
-
-			float vec_val;
-			try { vec_val = valByIdx( j ); }
-			catch( int e ) { vec_val = 1.0f; }
-
-			sum_val += ( mat_val * vec_val );
-		newVec[i] = sum_val;
-		}
-	}
-	x = newVec.x;
-	y = newVec.y;
-	z = newVec.z;
-	w = newVec.w;
+	x = dot( Vec4( mat.m_col1.x, mat.m_col2.x, mat.m_col3.x, mat.m_col4.x ) );
+	y = dot( Vec4( mat.m_col1.y, mat.m_col2.y, mat.m_col3.y, mat.m_col4.y ) );
+	z = dot( Vec4( mat.m_col1.z, mat.m_col2.z, mat.m_col3.z, mat.m_col4.z ) );
+	w = dot( Vec4( mat.m_col1.w, mat.m_col2.w, mat.m_col3.w, mat.m_col4.w ) );
 }
 
 Vec4 Vec4::operator/( float n ) const {
