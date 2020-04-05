@@ -36,18 +36,22 @@ class Scene {
 		int EnvProbeCount() { return m_envProbeCount; }
 		bool EnvProbeByIndex( unsigned int index, EnvProbe ** obj );
 
-		const Cube& GetSkybox() { return m_skybox; }
-		void SetSkybox( Str declName ) { m_skybox = Cube( declName ); }
+		const Cube * GetSkybox() { return m_skybox; }
+		void SetSkybox( Cube * skybox ) { m_skybox = skybox; }
+
+		void Unload();
 
 	private:
 		static Scene* inst_; //single instance
-		Scene() { m_name = Str(); m_meshCount = 0; m_lightCount = 0; m_envProbeCount = 0; }
+		Scene() { m_name = Str(); m_meshCount = 0; m_lightCount = 0; m_envProbeCount = 0; m_skybox = NULL; }
         Scene( const Scene& ); //don't implement
         Scene& operator=( const Scene& ); //don't implement
 
+		const unsigned int CreateVAO( const surface * s, const unsigned int transformCount, const float * transforms ) const;
+
 		Str m_name; //also the relative path to the scene file
 
-		Cube m_skybox;
+		Cube * m_skybox;
 
 		void LoadVAOs();
 		void BuildProbes();
@@ -56,9 +60,9 @@ class Scene {
 		unsigned int m_lightCount;
 		unsigned int m_envProbeCount;
 
-		Mesh* m_meshes [256];
-		Light* m_lights [256];
-		EnvProbe* m_envProbes [256];
+		Mesh* m_meshes[128];
+		Light* m_lights[256];
+		EnvProbe* m_envProbes[256];
 };
 
 #endif

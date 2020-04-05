@@ -8,28 +8,127 @@
 #include "stb_image.h"
 #include "stb_image_write.h"
 
+#define	BC7A_COMPRESSED	1
+#define BC7_COMPRESSED	2
+#define BC6H_COMPRESSED	3
+
+struct bc_header {
+	uint8_t type;
+	uint8_t blockdim_x;
+	uint8_t blockdim_y;
+	unsigned int xsize;
+	unsigned int ysize;
+};
+
+//static members initialized in glSetup()
+unsigned int Texture::s_errorTexture = 0;
+unsigned int CubemapTexture::s_errorCube = 0;
+
+/*
+===============================
+Texture::InitErrorTexture2D
+	-used to initialize static debug pink texture for error cases
+===============================
+*/
+unsigned int Texture::InitErrorTexture() {
+	const unsigned int pixCount = 4 * 4;
+	unsigned char * errorData = new unsigned char[ pixCount * 3 ];
+	for ( unsigned int i = 0; i < pixCount; i++ ) {
+		errorData[ i * 3 + 0 ] = 128;
+		errorData[ i * 3 + 1 ] = 128;
+		errorData[ i * 3 + 2 ] = 255;
+	}
+	
+	// Generate the texture
+	unsigned int textureID;
+	glGenTextures( 1, &textureID );
+
+	// Bind this texture so that we can modify and set it up
+	glBindTexture( GL_TEXTURE_2D, textureID );
+	
+	// Set the texture wrapping to clamp to edge
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT );
+
+	// Setup the filtering between texels
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+
+	glTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, 4, 4, 0, GL_RGB, GL_UNSIGNED_BYTE, errorData );
+
+	glBindTexture( 	GL_TEXTURE_2D, 0 );
+
+	delete[] errorData;
+	errorData = nullptr;
+	return textureID;
+}
+
+/*
+===============================
+CubemapTexture::InitErrorCube
+	-used to initialize static debug pink texture for error cases
+===============================
+*/
+unsigned int CubemapTexture::InitErrorCube() {
+	const unsigned int pixCount = 4 * 4;
+	unsigned char * errorData = new unsigned char[ pixCount * 3 ];
+	for ( unsigned int i = 0; i < pixCount; i++ ) {
+		errorData[ i * 3 + 0 ] = 128;
+		errorData[ i * 3 + 1 ] = 128;
+		errorData[ i * 3 + 2 ] = 255;
+	}
+
+	//create and bind cubemap texture
+	unsigned int cubemapTextureID;
+	glGenTextures( 1, &cubemapTextureID );
+	glBindTexture( GL_TEXTURE_CUBE_MAP, cubemapTextureID );
+
+	//Set the texture wrapping to clamp to edge
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE );
+
+	//Setup the filtering between texels
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+	
+	for ( unsigned int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
+		glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + faceIdx, 0, GL_RGB8, 4, 4, 0, GL_RGB, GL_UNSIGNED_BYTE, errorData );
+	}
+
+	//glBindTexture( GL_TEXTURE_CUBE_MAP, 0 );
+
+	delete[] errorData;
+	errorData = nullptr;
+	return cubemapTextureID;
+}
+
 /*
 ===============================
 Texture::Texture
 ===============================
 */
-Texture::Texture() :
-mName( 0 ),
-mWidth( 0 ),
-mHeight( 0 ),
-mChanCount( 0 ) {
+Texture::Texture() {
+	mName = 0;
+	mWidth = 0;
+	mHeight = 0;
+	mChanCount = 0;
 	m_empty = true;
+	m_compressed = false;
 	mTarget = GL_TEXTURE_2D;
 }
 
 /*
 ===============================
-Texture::~Texture
+Texture::Delete
+	-delete texture from gpu
 ===============================
 */
-Texture::~Texture() {
+void Texture::Delete() {
 	if ( mName > 0 ) {
-		glDeleteTextures( 1, &mName );
+		if ( mName != s_errorTexture ) {
+			glDeleteTextures( 1, &mName );
+		}
 		mName = 0;
 	}
 }
@@ -72,6 +171,12 @@ void Texture::InitWithData( const unsigned char * data, const int width, const i
 		}
 	} else if ( strcmp( ext, "hdr" ) == 0 ) {
 		glTexImage2D( GL_TEXTURE_2D, 0, GL_RGB16F, mWidth, mHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, data );
+	} else if ( strcmp( ext, "bc7" ) == 0 || strcmp( ext, "bc7a" ) == 0 ) {
+		const GLsizei imgSize = ( mWidth / 4 ) * ( mHeight / 4 ) * 16; //total number of blocks at 16bytes per block
+		glCompressedTexImage2D( GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_BPTC_UNORM, mWidth, mHeight, 0, imgSize, data );
+	} else if ( strcmp( ext, "bc6h" ) == 0 ) {
+		const GLsizei imgSize = ( mWidth / 4 ) * ( mHeight / 4 ) * 16; //total number of blocks at 16bytes per block
+		glCompressedTexImage2D( GL_TEXTURE_2D, 0, GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_ARB, mWidth, mHeight, 0, imgSize, data );
 	}
 
 	//generate mipmaps
@@ -83,10 +188,10 @@ void Texture::InitWithData( const unsigned char * data, const int width, const i
 
 /*
 ===============================
-Texture::InitFromFile
+Texture::InitFromFile_Uncompressed
 ===============================
 */
-bool Texture::InitFromFile( const char * relativePath ) {
+bool Texture::InitFromFile_Uncompressed( const char * relativePath ) {
 	strcpy( mStrName, relativePath );
 
 	//get file extension
@@ -108,7 +213,8 @@ bool Texture::InitFromFile( const char * relativePath ) {
 		stbi_image_free( data );
 		m_empty = false;
 	} else {
-		printf( "Failed to load texture: %s\n", relativePath );
+		UseErrorTexture();
+		printf( "Failed to load uncompressed texture: %s\n", relativePath );
 		return false;
 	}
 	return true;
@@ -116,34 +222,438 @@ bool Texture::InitFromFile( const char * relativePath ) {
 
 /*
 ===============================
+Texture::InitFromFile
+===============================
+*/
+bool Texture::InitFromFile( const char * relativePath ) {
+	strcpy( mStrName, relativePath );
+
+	//get relative path the generated bc file
+	Str output_file_relative = Str( relativePath );
+	output_file_relative.ReplaceChar( '/', '\\' );
+	output_file_relative.Replace( "data\\texture\\", "data\\generated\\texture\\", false );
+	if ( output_file_relative.EndsWith( "tga" ) ) {
+		output_file_relative.Replace( ".tga", ".bc", false );
+	} else if ( output_file_relative.EndsWith( "hdr" ) ) {
+		output_file_relative.Replace( ".hdr", ".bc", false );
+	} else {
+		UseErrorTexture();
+		return false;
+	}
+
+	//get absolute path
+	char output_file_absolute[ 2048 ];
+	RelativePathToFullPath( output_file_relative.c_str(), output_file_absolute );
+
+	//open file
+	FILE * fs = fopen( output_file_absolute, "rb" );
+	if ( !fs ) {
+		printf( "Failed to load uncompressed texture: %s\n", output_file_relative.c_str() );
+		UseErrorTexture();
+		return false;
+	}	
+
+	//load header data
+	bc_header file_header;
+	fread( &file_header, sizeof( bc_header ), 1, fs );	
+
+	int chanCount;
+	const unsigned int imgType = ( unsigned int )file_header.type;
+	Str fileExtension;
+	if ( imgType == BC6H_COMPRESSED ) {
+		chanCount = 3;
+		fileExtension = "bc6h";
+	} else if ( imgType == BC7_COMPRESSED ) {
+		chanCount = 3;
+		fileExtension = "bc7";
+	} else if ( imgType == BC7A_COMPRESSED ) {
+		chanCount = 4;
+		fileExtension = "bc7a";
+	} else {
+		printf( "Following texture had invalid header: %s\n", output_file_relative.c_str() );
+		UseErrorTexture();
+		return false;
+	}
+	const int width = ( int )file_header.xsize;
+	const int height = ( int )file_header.ysize;	
+
+	//load img data
+	const size_t bytes_per_block = 16;
+	const size_t ptr_size = ( width / ( int )file_header.blockdim_x ) * ( height / ( int )file_header.blockdim_y ) * ( int )bytes_per_block;
+	unsigned char * data = new unsigned char[ptr_size];
+	fread( data, ptr_size, 1, fs );
+	InitWithData( data, width, height, chanCount, fileExtension.c_str() ); //pass to gpu
+	delete[] data;
+	data = nullptr;
+	m_empty = false;
+
+	return true;
+}
+
+
+
+/*
+===============================
+store_bc6h
+	-write compressed img data to disc
+===============================
+*/
+void store_bc6h( const rgba_surface * img, const unsigned int width, const unsigned int height, const char* filename ) {
+    FILE * fs = fopen( filename, "wb" );
+
+    bc_header file_header;
+	file_header.type = BC6H_COMPRESSED;
+    file_header.blockdim_x = 4;
+    file_header.blockdim_y = 4;
+	file_header.xsize = width;
+	file_header.ysize = height;
+
+    fwrite( &file_header, sizeof( bc_header ), 1, fs );
+
+    const unsigned int bytes_per_block = 16;
+    fwrite( img->ptr, img->width * img->height * bytes_per_block, 1, fs );
+
+    fclose( fs );
+}
+
+/*
+===============================
+store_bc7
+	-write compressed img data to disc
+===============================
+*/
+void store_bc7( const rgba_surface * img, const unsigned int width, const unsigned int height, const unsigned int chanCount, const char* filename ) {
+    FILE * fs = fopen( filename, "wb" );
+
+    bc_header file_header;
+	if ( chanCount == 3 ) {
+		file_header.type = BC7_COMPRESSED;
+	} else {
+		file_header.type = BC7A_COMPRESSED;
+	}
+    file_header.blockdim_x = 4;
+    file_header.blockdim_y = 4;
+	file_header.xsize = width;
+	file_header.ysize = height;
+
+    fwrite( &file_header, sizeof( bc_header ), 1, fs );
+
+    const unsigned int bytes_per_block = 16;
+    fwrite( img->ptr, img->width * img->height * bytes_per_block, 1, fs );
+
+    fclose( fs );
+}
+
+/*
+===============================
+Texture::CompressImage
+===============================
+*/
+bool Texture::CompressFromFile( const char * relativePath ) {
+	//get relative path the generated bc file
+	Str output_file_relative = Str( relativePath );
+	output_file_relative.ReplaceChar( '/', '\\' );
+	output_file_relative.Replace( "data\\texture\\", "data\\generated\\texture\\", false );
+	if ( output_file_relative.EndsWith( "tga" ) ) {
+		output_file_relative.Replace( ".tga", ".bc", false );
+	} else if ( output_file_relative.EndsWith( "hdr" ) ) {
+		output_file_relative.Replace( ".hdr", ".bc", false );
+	} else {
+		return false;
+	}
+
+	//create windows folders
+	int filename_idx = -1;
+	for ( unsigned int i = output_file_relative.Length() - 1; i >= 0; i-- ) {
+		if ( output_file_relative[i] == '\\' || output_file_relative[i] == '/' ) {
+			filename_idx = ( int )i;
+			break;
+		}
+	}	
+	assert( filename_idx > -1 );
+	Str output_dir = output_file_relative.Substring( 0, filename_idx );
+	if ( dirExists( output_dir.c_str() ) == false ) {
+		makeDir( output_dir.c_str() );
+	}
+
+	//get absolute path
+	char output_file_absolute[ 2048 ];
+	RelativePathToFullPath( output_file_relative.c_str(), output_file_absolute ); //get absolute path
+
+	//get file extension
+	const std::string fileExtension = GetExtension( relativePath );
+	if( fileExtension.empty() ) {
+		return false;
+	}
+	char imgPath[ 2048 ];
+	RelativePathToFullPath( relativePath, imgPath ); //get absolute path
+
+	int width, height, chanCount;
+	const unsigned int block_width = 4;
+	const unsigned int block_height = 4;
+	const size_t bytes_per_block = 16;
+	stbi_set_flip_vertically_on_load( true );
+	if ( fileExtension == "tga" ) { //bc7
+		unsigned char * buffer_data = stbi_load( imgPath, &width, &height, &chanCount, 0 );
+		if ( !buffer_data ) {
+			return false;
+		}
+		if ( chanCount < 1 || width < 4 || height < 4 ) {
+			stbi_image_free( buffer_data );
+			return false;
+		}
+
+		rgba_surface input_tex;
+		input_tex.width = width;
+		input_tex.height = height;
+		input_tex.stride = width * sizeof( unsigned char ) * 4; //LDR input is 32 bit/pixel (sRGB)
+		input_tex.ptr = buffer_data;
+		unsigned char * data = NULL;
+
+		rgba_surface output_tex;
+		const int width_blockCount = width / 4;
+		const int height_blockCount = height / 4;
+		output_tex.width = width_blockCount;
+		output_tex.height = height_blockCount;
+		output_tex.stride = width_blockCount * bytes_per_block;
+		output_tex.ptr = new uint8_t[ width_blockCount * height_blockCount * bytes_per_block ];
+
+		//compress
+		bc7_enc_settings settings;
+		if ( chanCount == 1 ) {
+			data = new unsigned char[ width * height * 4 ];
+			for ( unsigned int i = 0; i < width * height; i++ ) {
+				data[ i * 4 + 0 ] = buffer_data[ i ];
+				data[ i * 4 + 1 ] = buffer_data[ i ];
+				data[ i * 4 + 2 ] = buffer_data[ i ];
+				data[ i * 4 + 3 ] = 255;
+			}
+			input_tex.ptr = data;
+			chanCount = 4;
+			GetProfile_basic( &settings );
+		} else if ( chanCount == 2 ) {
+			data = new unsigned char[ width * height * 4 ];
+			for ( unsigned int i = 0; i < width * height; i++ ) {
+				data[ i * 4 + 0 ] = buffer_data[ i * 2 ];
+				data[ i * 4 + 1 ] = 0;
+				data[ i * 4 + 2 ] = 0;
+				data[ i * 4 + 3 ] = 255;
+			}
+			input_tex.ptr = data;
+			chanCount = 4;
+			GetProfile_basic( &settings );
+		} else if ( chanCount == 3 ) {			
+			data = new unsigned char[ width * height * 4 ];
+			for ( unsigned int i = 0; i < width * height; i++ ) {
+				data[ i * 4 + 0 ] = buffer_data[ i * 3 + 0 ];
+				data[ i * 4 + 1 ] = buffer_data[ i * 3 + 1 ];
+				data[ i * 4 + 2 ] = buffer_data[ i * 3 + 2 ];
+				data[ i * 4 + 3 ] = 255;
+			}
+			input_tex.ptr = data;
+			chanCount = 4;
+			GetProfile_basic( &settings );
+		} else if ( chanCount == 4 ) {
+			GetProfile_alpha_basic( &settings );				
+		} else {
+			delete[] output_tex.ptr;
+			output_tex.ptr = nullptr;
+			printf( "ERROR :: BC7 image must have 3 or 4 channels!!!\n" );
+			stbi_image_free( buffer_data );
+			return false;
+		}
+		CompressBlocksBC7( &input_tex,  output_tex.ptr, &settings );
+
+		store_bc7( &output_tex, width, height, chanCount, output_file_absolute );
+		delete[] output_tex.ptr;
+		output_tex.ptr = nullptr;
+		stbi_image_free( buffer_data );
+		if ( data != NULL ) {
+			delete[] data;
+			data = nullptr;
+		}
+
+	} else if ( fileExtension == "hdr" ) { //bc6h
+		float * data = stbi_loadf( imgPath, &width, &height, &chanCount, 0 );
+		if ( !data ) {
+			return false;
+		}
+		if ( chanCount != 3 || width < 4 || height < 4 ) {
+			stbi_image_free( data );
+			return false;
+		}
+
+		//hdr vals for bc6h uses 2 bytes. So we convert each float in data to a short.
+		//we also need to have each pixel have 8 bytes (two per value). So we convert to rgba with a==1.
+		rgba_surface input_tex;
+		input_tex.width = width;
+		input_tex.height = height;
+		input_tex.stride = width * sizeof( unsigned short ) * 4; //HDR is 64 bit/pixel (half float), thus chanCount for output must be 4
+		const unsigned int valCount = width * height * chanCount;
+		unsigned short * data_short = new unsigned short [ width * height * 4 ];
+		for ( unsigned int i = 0; i < width * height; i++ ) {
+			for ( unsigned int j = 0; j < chanCount; j++ ) {
+				data_short[ i * 4 + j ] = F32toF16( data[ i * 3 + j ] );
+			}
+			data_short[ i * 4 + 3 ] = 1; //fill alpha channel
+		}
+		input_tex.ptr = ( uint8_t * )data_short;
+		stbi_image_free( data );
+
+		//flip the image vertically
+		input_tex.ptr += ( input_tex.height - 1 ) * input_tex.stride;
+		input_tex.stride *= -1;
+
+		rgba_surface output_tex;
+		const int width_blockCount = width / 4;
+		const int height_blockCount = height / 4;
+		output_tex.width = width_blockCount;
+		output_tex.height = height_blockCount;
+		output_tex.stride = width_blockCount * bytes_per_block;
+		output_tex.ptr = new uint8_t[ width_blockCount * height_blockCount * bytes_per_block ];
+
+		//compress
+		bc6h_enc_settings settings;
+		GetProfile_bc6h_basic( &settings );
+		CompressBlocksBC6H( &input_tex,  output_tex.ptr, &settings );
+
+		store_bc6h( &output_tex, width, height, output_file_absolute );
+		delete[] output_tex.ptr;
+		output_tex.ptr = nullptr;
+	}				
+
+	return true;
+}
+
+/*
+===============================
+Texture::Error
+	-Set texture to use s_errorTexture as mName
+===============================
+*/
+void Texture::UseErrorTexture() {
+	mName = s_errorTexture;
+	mWidth = 4;
+	mHeight = 4;
+	mChanCount = 3;
+	mTarget = GL_TEXTURE_2D;
+}
+
+/*
+===============================
+CubemapTexture::CubemapTexture
+===============================
+*/
+CubemapTexture::CubemapTexture() {
+	mName = 0;
+	mWidth = 0;
+	mHeight = 0;
+	mChanCount = 0;
+	m_empty = true;
+	m_compressed = false;
+	mTarget = GL_TEXTURE_CUBE_MAP;
+}
+
+/*
+===============================
+CubemapTexture::Delete
+	-delete texture from gpu
+===============================
+*/
+void CubemapTexture::Delete() {
+	if ( mName > 0 ) {
+		if ( mName != s_errorCube ) {
+			glDeleteTextures( 1, &mName );
+		}
+		mName = 0;
+	}
+}
+
+/*
+===============================
 CubemapTexture::InitWithData
 ===============================
 */
-void CubemapTexture::InitWithData( const unsigned char * data, const int face, const int height, const int chanCount ) {
-	//Map a face of the cube
-	unsigned char * face_data = new unsigned char[ height * height * chanCount ];
-	for ( unsigned int i = 0; i < height; i++ ) {
-		for ( unsigned int j = 0; j < height; j++ ) {
-			unsigned int k = ( unsigned int )height * ( unsigned int )face + j;
-			for ( unsigned int n = 0; n < chanCount; n++ ) {
-				face_data[ ( height * i + j ) * chanCount + n ] = data[ ( height * 6 * i + k ) * chanCount + n ];
+void CubemapTexture::InitWithData( const void * data, const int face, const int height, const int chanCount, const char * ext ) {
+	if ( strcmp( ext, "tga" ) == 0 ) {
+		//Map a face of the cube
+		unsigned char * src = ( unsigned char * )data;
+		unsigned char * face_data = new unsigned char[ height * height * chanCount ];
+		for ( unsigned int i = 0; i < height; i++ ) {
+			for ( unsigned int j = 0; j < height; j++ ) {
+				unsigned int k = ( unsigned int )height * ( unsigned int )face + j;
+				for ( unsigned int n = 0; n < chanCount; n++ ) {
+					face_data[ ( height * i + j ) * chanCount + n ] = src[ ( height * 6 * i + k ) * chanCount + n ];
+				}
 			}
 		}
-	}
+		assert( chanCount > 0 && chanCount <= 4 );
+		if( chanCount == 1 ) {
+			glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_R8, height, height, 0, GL_RED, GL_UNSIGNED_BYTE, face_data );
+		} else if ( chanCount == 2 ) {
+			glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RG8, height, height, 0, GL_RG, GL_UNSIGNED_BYTE, face_data );
+		} else if ( chanCount == 3 ) {
+			glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RGB8, height, height, 0, GL_RGB, GL_UNSIGNED_BYTE, face_data );
+		} else {
+			glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RGBA8, height, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, face_data );
+		}
+		delete[] face_data;
+		face_data = nullptr;
 
-	//pass to gpu
-	assert( chanCount > 0 && chanCount <= 4 );
-	if( chanCount == 1 ) {
-		glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_R8, height, height, 0, GL_RED, GL_UNSIGNED_BYTE, face_data );
-	} else if ( chanCount == 2 ) {
-		glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RG8, height, height, 0, GL_RG, GL_UNSIGNED_BYTE, face_data );
-	} else if ( chanCount == 3 ) {
-		glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RGB8, height, height, 0, GL_RGB, GL_UNSIGNED_BYTE, face_data );
-	} else {
-		glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RGBA8, height, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, face_data );
-	}
+	} else if ( strcmp( ext, "hdr" ) == 0 ) {
+		//Map a face of the cube
+		float * src = ( float * )data;
+		float * face_data = new float[ height * height * chanCount ];
+		for ( unsigned int i = 0; i < height; i++ ) {
+			for ( unsigned int j = 0; j < height; j++ ) {
+				unsigned int k = ( unsigned int )height * ( unsigned int )face + j;
+				for ( unsigned int n = 0; n < chanCount; n++ ) {
+					face_data[ ( height * i + j ) * chanCount + n ] = src[ ( height * 6 * i + k ) * chanCount + n ];
+				}
+			}
+		}
+		glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RGB16F, height, height, 0, GL_RGB, GL_FLOAT, face_data );
+		delete[] face_data;
+		face_data = nullptr;
 
-	delete[] face_data; //delete
+	} else if ( strcmp( ext, "bc7" ) == 0 || strcmp( ext, "bc7a" ) == 0 ) {
+		//Map a face of the cube
+		const unsigned int bytesPerBlock = 16;
+		const unsigned int height_inBlocks = height / 4;
+		unsigned char * src = ( unsigned char * )data;
+		unsigned char * face_data = new unsigned char[ height_inBlocks * height_inBlocks * bytesPerBlock ];
+		for ( unsigned int i = 0; i < height_inBlocks; i++ ) {
+			for ( unsigned int j = 0; j < height_inBlocks; j++ ) {
+				unsigned int k = height_inBlocks * ( unsigned int )face + j;
+				for ( unsigned int n = 0; n < bytesPerBlock; n++ ) {
+					face_data[ ( height_inBlocks * i + j ) * bytesPerBlock + n ] = src[ ( height_inBlocks * 6 * i + k ) * bytesPerBlock + n ];
+				}
+			}
+		}
+		const GLsizei imgSize = height_inBlocks * height_inBlocks * bytesPerBlock; //total number of blocks at 16bytes per block for this face
+		glCompressedTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_COMPRESSED_RGBA_BPTC_UNORM, height, height, 0, imgSize, face_data );
+		delete[] face_data;
+		face_data = nullptr;
+
+	} else if ( strcmp( ext, "bc6h" ) == 0 ) {
+		//Map a face of the cube
+		const unsigned int bytesPerBlock = 16;
+		const unsigned int height_inBlocks = height / 4;
+		unsigned char * src = ( unsigned char * )data;
+		unsigned char * face_data = new unsigned char[ height_inBlocks * height_inBlocks * bytesPerBlock ];
+		for ( unsigned int i = 0; i < height_inBlocks; i++ ) {
+			for ( unsigned int j = 0; j < height_inBlocks; j++ ) {
+				unsigned int k = height_inBlocks * ( unsigned int )face + j;
+				for ( unsigned int n = 0; n < bytesPerBlock; n++ ) {
+					face_data[ ( height_inBlocks * i + j ) * bytesPerBlock + n ] = src[ ( height_inBlocks * 6 * i + k ) * bytesPerBlock + n ];
+				}
+			}
+		}
+		const GLsizei imgSize = height_inBlocks * height_inBlocks * bytesPerBlock; //total number of blocks at 16bytes per block for this face
+		glCompressedTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_ARB, height, height, 0, imgSize, face_data );
+		delete[] face_data;
+		face_data = nullptr;
+	}
 }
 
 /*
@@ -167,6 +677,7 @@ void CubemapTexture::InitWithData( const float * data, const int face, const int
 	glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RGB16F, height, height, 0, GL_RGB, GL_FLOAT, face_data );
 
 	delete[] face_data; //delete
+	face_data = nullptr;
 }
 
 /*
@@ -174,12 +685,13 @@ void CubemapTexture::InitWithData( const float * data, const int face, const int
 CubemapTexture::InitFromFile
 ===============================
 */
-bool CubemapTexture::InitFromFile( const char * relativePath ) {
+bool CubemapTexture::InitFromFile_Uncompressed( const char * relativePath ) {
 	strcpy( mStrName, relativePath ); //initialize mStrName
 
 	//get file extension
 	const std::string fileExtension = GetExtension( relativePath );
 	if( fileExtension.empty() ) {
+		UseErrorTexture();
 		return false;
 	}
 
@@ -200,8 +712,8 @@ bool CubemapTexture::InitFromFile( const char * relativePath ) {
 	int width, height, chanCount;
 	stbi_set_flip_vertically_on_load( false );
 
-	unsigned char * ldr_data;
-	float * hdr_data;
+	unsigned char * ldr_data = NULL;
+	float * hdr_data = NULL;
 	bool isHDR = false;
 	if ( strcmp( fileExtension.c_str(), "tga" ) == 0 ) {
 		ldr_data = stbi_load( imgPath, &width, &height, &chanCount, 0 );
@@ -209,16 +721,19 @@ bool CubemapTexture::InitFromFile( const char * relativePath ) {
 		hdr_data = stbi_loadf( imgPath, &width, &height, &chanCount, 0 );
 		isHDR = true;
 	} else {
+		UseErrorTexture();
 		printf( "Failed to load texture: %s\n", relativePath );
 		return false;
 	}	
 
 	if ( ldr_data || hdr_data ) {
-		if (width < 0 || height < 0) {
+		if ( width < 0 || height < 0 ) {
+			UseErrorTexture();
 			printf( "Failed to load texture: %s\n", relativePath );
 			return false;
 		}
 		if ( height * 6 != width ) {
+			UseErrorTexture();
 			printf( "Failed to load texture: %s\n\tIncorrect dimensions!!!\n", relativePath );
 			return false;
 		}
@@ -244,9 +759,9 @@ bool CubemapTexture::InitFromFile( const char * relativePath ) {
 		//pass to gpu
 		for ( int face = 0; face < 6; face++ ) {
 			if ( isHDR ) {
-				InitWithData( hdr_data, face, height, chanCount );
+				InitWithData( hdr_data, face, height, chanCount, fileExtension.c_str() );
 			} else {
-				InitWithData( ldr_data, face, height, chanCount );
+				InitWithData( ldr_data, face, height, chanCount, fileExtension.c_str() );
 			}
 		}
 
@@ -259,12 +774,135 @@ bool CubemapTexture::InitFromFile( const char * relativePath ) {
 			stbi_image_free( ldr_data );
 		}
 		m_empty = false;
+
 	} else {
+		UseErrorTexture();
 		printf( "Failed to load texture: %s\n", relativePath );
 		return false;
 	}
 
 	return true;
+}
+
+/*
+===============================
+CubemapTexture::InitFromFile
+===============================
+*/
+bool CubemapTexture::InitFromFile( const char * relativePath ) {
+	strcpy( mStrName, relativePath ); //initialize mStrName
+
+	//get relative path the generated bc file
+	Str output_file_relative = Str( relativePath );
+	output_file_relative.ReplaceChar( '/', '\\' );
+	output_file_relative.Replace( "data\\texture\\", "data\\generated\\texture\\", false );
+	if ( output_file_relative.EndsWith( "tga" ) ) {
+		output_file_relative.Replace( ".tga", ".bc", false );
+	} else if ( output_file_relative.EndsWith( "hdr" ) ) {
+		output_file_relative.Replace( ".hdr", ".bc", false );
+	} else {
+		UseErrorTexture();
+		return false;
+	}
+
+	//get absolute path
+	char output_file_absolute[ 2048 ];
+	RelativePathToFullPath( output_file_relative.c_str(), output_file_absolute );
+
+	//open file
+	FILE * fs = fopen( output_file_absolute, "rb" );
+	if ( !fs ) {
+		printf( "Failed to load texture: %s\n", output_file_relative.c_str() );
+		UseErrorTexture();
+		return false;
+	}	
+
+	//load header data
+	bc_header file_header;
+	fread( &file_header, sizeof( bc_header ), 1, fs );	
+
+	int chanCount;
+	const unsigned int imgType = ( unsigned int )file_header.type;
+	Str fileExtension;
+	if ( imgType == BC6H_COMPRESSED ) {
+		chanCount = 3;
+		fileExtension = "bc6h";
+	} else if ( imgType == BC7_COMPRESSED ) {
+		chanCount = 3;
+		fileExtension = "bc7";
+	} else if ( imgType == BC7A_COMPRESSED ) {
+		chanCount = 4;
+		fileExtension = "bc7a";
+	} else {
+		printf( "Following texture had invalid header: %s\n", output_file_relative.c_str() );
+		UseErrorTexture();
+		return false;
+	}
+	const int width = ( int )file_header.xsize;
+	const int height = ( int )file_header.ysize;
+
+	if ( height < 4 ) {
+		UseErrorTexture();
+		printf( "Cubemap width must be 4 or larger: %s\n", relativePath );
+		return false;
+	}
+	if ( height * 6 != width ) {
+		UseErrorTexture();
+		printf( "Failed to load texture: %s\n\tIncorrect dimensions!!!\n", relativePath );
+		return false;
+	}
+
+	//load img data
+	const size_t bytes_per_block = 16;
+	const size_t ptr_size = ( width / ( int )file_header.blockdim_x ) * ( height / ( int )file_header.blockdim_y ) * ( int )bytes_per_block;
+	unsigned char * data = new unsigned char[ptr_size];
+	fread( data, ptr_size, 1, fs );
+
+	mWidth = width;
+	mHeight = height;
+	mChanCount = chanCount;
+	mTarget = GL_TEXTURE_CUBE_MAP;
+
+	//create and bind cubemap texture
+	glGenTextures( 1, &mName );
+	glBindTexture( GL_TEXTURE_CUBE_MAP, mName );
+
+	//Set the texture wrapping to clamp to edge
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE );
+
+	//Setup the filtering between texels
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+
+	//pass to gpu
+	for ( int face = 0; face < 6; face++ ) {
+		InitWithData( data, face, height, chanCount, fileExtension.c_str() );
+	}
+
+	// Reset the bound texture to nothing
+	glBindTexture( GL_TEXTURE_CUBE_MAP, 0 );
+
+	delete[] data;
+	data = nullptr;
+	m_empty = false;
+
+	return true;
+}
+
+/*
+===============================
+CubemapTexture::Error
+	-Set texture to use s_errorTexture as mName
+===============================
+*/
+void CubemapTexture::UseErrorTexture() {
+	mName = s_errorCube;
+	mWidth = 4 * 6;
+	mHeight = 4;
+	mChanCount = 3;
+	mTarget = GL_TEXTURE_CUBE_MAP;
 }
 
 /*
@@ -320,7 +958,7 @@ void CubemapTexture::PrefilterSpeculateProbe() {
 	prefilterFBO.Bind();
 	shaderProg->UseProgram();
 	for ( unsigned int mip = 0; mip < maxMipLevelCount; mip++ ) {
-		unsigned int mipDimension = cubeSize * std::pow( 0.5, mip );
+		unsigned int mipDimension = cubeSize * pow( 0.5, mip );
 		glViewport( 0, 0, mipDimension, mipDimension );
 
 		const float roughness = ( float )mip / ( float )( maxMipLevelCount - 1 );
@@ -337,7 +975,9 @@ void CubemapTexture::PrefilterSpeculateProbe() {
 
 	//delete old cubemap texture
 	glBindTexture( GL_TEXTURE_CUBE_MAP, 0 );
-	glDeleteTextures( 1, &mName );
+	if ( mName != s_errorCube ) {
+		glDeleteTextures( 1, &mName );
+	}
 
 	//replace the current cubemap with the FBO color attachement
 	mName = prefilterFBO.m_attachements[0];
@@ -383,7 +1023,9 @@ void CubemapTexture::PrefilterSpeculateProbe() {
 		prefilteredMap_absolute += ".hdr";
 		stbi_write_hdr( prefilteredMap_absolute.c_str(), mipDimension * 6, mipDimension, mChanCount, output_data ); //save image
 		delete[] cubemapFace_data;
+		cubemapFace_data = nullptr;
 		delete[] output_data;
+		output_data = nullptr;
 	}
 	*/
 }

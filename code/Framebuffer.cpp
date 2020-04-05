@@ -43,6 +43,24 @@ Framebuffer::Framebuffer( std::string colorbufferUniform ) {
 	m_colorbufferUniform = colorbufferUniform;
 	m_colorBufferCount = 0;
 	m_multisample = 0;
+	m_screenVAO = 0;
+}
+
+/*
+================================
+Framebuffer::Delete
+================================
+*/
+void Framebuffer::Delete() {
+	for ( unsigned int i = 0; i < m_attachements.size(); i++ ) {
+		glDeleteTextures( 1, &m_attachements[0] );
+	}
+	if ( m_id > 0 ) {
+		glDeleteFramebuffers( 1, &m_id );
+	}
+	if ( m_screenVAO > 0 ) {
+		glDeleteVertexArrays( 1, &m_screenVAO );
+	}
 }
 
 /*
@@ -59,6 +77,7 @@ bool Framebuffer::CreateDefaultBuffer( unsigned int width, unsigned int height )
 	m_shader = new Shader();
 	if( !m_shader->CompileShaderFromCSTR( s_vshader_source, s_fshader_source ) ){
 		delete m_shader;
+		m_shader = nullptr;
 		return false;
 	}
 
@@ -158,7 +177,6 @@ void Framebuffer::AttachCubeMapTextureBuffer( GLenum internalformat, GLenum atta
 
 	m_shader->UseProgram();
 	m_shader->SetAndBindUniformTexture( m_colorbufferUniform.c_str(), 0, GL_TEXTURE_CUBE_MAP, texBuffer ); //pass texture uniform to shader
-
 	glBindTexture( GL_TEXTURE_CUBE_MAP, 0 );
 }
 
@@ -201,7 +219,8 @@ void Framebuffer::DrawToMultipleBuffers() {
 		attachements[i] = GL_COLOR_ATTACHMENT0 + i;
 	}
 	glDrawBuffers( m_colorBufferCount, attachements );
-	delete attachements;
+	delete[] attachements;
+	attachements = nullptr;
 }
 
 /*

@@ -15,8 +15,6 @@ uniform samplerCube prefilteredEnvMap;
 
 const float E = 2.71828182846;
 const float PI = 3.14159265359;
-const float EPSILON = 0.00001;
-const float SHADOWMAPSIZE = 512.0;
 const int MAX_LIGHTS = 16;
 const float MAX_REFLECTION_LOD = 4.0;
 

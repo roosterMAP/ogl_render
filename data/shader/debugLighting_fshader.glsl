@@ -123,14 +123,14 @@ void main() {
 		FragColor = vec4( normal, 1.0 );
 	} else if ( mode == 6 ) {
 		//render the light volume into the scene
-		vec4 color = vec4( 0.0, 0.0, 0.0, 1.0 );
+		bool binFrag = false;
 
 		mat4 MVP = projection * view;
 		float frag_ndc_x = gl_FragCoord.x / screenWidth * 2.0 - 1.0;
 		float frag_ndc_y = gl_FragCoord.y / screenHeight * 2.0 - 1.0;
 		vec2 frag_ndc = vec2( frag_ndc_x, frag_ndc_y );
 
-		vec3 clipPlanePos = camPos + ( camLook * 0.000001 ); //hardcode a tiny number instead of using near-plane
+		vec3 clipPlanePos = camPos + ( camLook * 0.0001 ); //hardcode a tiny number instead of using near-plane
 
 		float hfov_half = atan( 1.0 / projection[0][0] );
 		float vfov_half = atan( 1.0 / projection[1][1] );
@@ -242,18 +242,19 @@ void main() {
 				vec4 p3_v4 = MVP * vec4( p3, 1.0 );
 				vec3 p3_v3 = p3_v4.xyz / p3_v4.w;
 
-				//depth testing
+				//bin fragment
 				vec3 b1 = Barycentric( frag_ndc, p0_v3.xy, p1_v3.xy, p2_v3.xy );
 				if ( b1.x >= 0.0 && b1.y >= 0.0 && b1.z >= 0.0 ) {
+					//depth test
 					float b1_depth = getFragDepth( b1, vec3( p0_v3.z, p1_v3.z, p2_v3.z ) );
 					if ( withinLightEffect ) {
 						if ( b1_depth > gl_FragCoord.z ) {
-							color = vec4( 0.0, 0.05, 0.0, 1.0 );
+							binFrag = true;
 							break;
 						}
 					} else {
 						if ( b1_depth < gl_FragCoord.z ) {
-							color = vec4( 0.0, 0.05, 0.0, 1.0 );
+							binFrag = true;
 							break;
 						}
 					}
@@ -261,15 +262,16 @@ void main() {
 				if ( twoVertsInFront ) {
 					vec3 b2 = Barycentric( frag_ndc, p1_v3.xy, p3_v3.xy, p2_v3.xy );
 					if ( b2.x >= 0.0 && b2.y >= 0.0 && b2.z >= 0.0 ) {
+						//depth test
 						float b2_depth = getFragDepth( b2, vec3( p1_v3.z, p3_v3.z, p2_v3.z ) );
 						if ( withinLightEffect ) {
 							if ( b2_depth > gl_FragCoord.z ) {
-								color = vec4( 0.0, 0.05, 0.0, 1.0 );
+								binFrag = true;
 								break;
 							}
 						} else {
 							if ( b2_depth < gl_FragCoord.z ) {
-								color = vec4( 0.0, 0.05, 0.0, 1.0 );
+								binFrag = true;
 								break;
 							}
 						}
@@ -282,10 +284,15 @@ void main() {
 		ivec2 tiledCoord = ivec2( gl_FragCoord.xy ) / WORK_GROUP_SIZE;
 		int workGroupID = tiledCoord.x + tiledCoord.y * screenWidth / WORK_GROUP_SIZE;
 		int numLights = int( lightLists[ workGroupID ].count );
-		float valIncrement = 1.0 / maxLightsPerTile;
-		float val = valIncrement * numLights;
 
-		FragColor = vec4( vec3( val + color.g, val + color.g, val + color.g ), 1.0 );
+		vec4 color = vec4( 0.0, 0.0, 0.0, 1.0 );
+		if ( numLights > 0 ) {
+			color = vec4( 0.5, 0.5, 0.0, 1.0 );
+		}
+		if ( binFrag ) {
+			color = vec4( 1.0, 1.0, 0.0, 1.0 );
+		}
+		FragColor = color;
 
 	} else {
 		vec3 color = texture( sampleTexture, TexCoord ).rgb;

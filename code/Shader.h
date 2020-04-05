@@ -19,7 +19,7 @@ typedef std::map< GLuint, Buffer * > bufferMap;
 
 class Buffer {
 	public:
-		Buffer() { m_initialized = false; };
+		Buffer() { m_initialized = false; m_pinned = false; };
 		~Buffer() {};
 
 		void DeleteBuffer();
@@ -37,9 +37,12 @@ class Buffer {
 		char m_name[64];
 		GLuint m_bindingPoint;
 		GLsizeiptr m_size;
+		bool m_pinned;
 
 		static unsigned int s_count;
 		static resourceMap_b s_buffers;
+
+	friend Shader;
 };
 
 /*
@@ -67,6 +70,9 @@ public:
 
 	void DeleteProgram();
 	static void DeleteAllPrograms();
+
+	void PinShader();
+	void UnpinShader();
 
 	GLuint GetUniform( const char * name );
 	int GetAttribute( const char * name );
@@ -105,6 +111,8 @@ private:
 	bool CompileShaderFromFile( const char *vshaderFile, const char *gshaderFile, const char *fshaderFile );
 
 	static resourceMap_s s_shaders;
+
+	bool m_pinned;
 };
 
 #endif

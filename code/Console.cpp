@@ -1,3 +1,6 @@
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "Console.h"
 #include "Command.h"
 #include "Fileio.h"
@@ -97,17 +100,11 @@ void Console::InitTextGeo() {
 
 /*
 ================================
-Console::Init
+Console::CompileConsoleShaders
+	-compile shader for background plane and text
 ================================
 */
-bool Console::Init( char * fontRelativePath ) {
-	//get window properties
-	m_gScreenWidth = glutGet( GLUT_WINDOW_WIDTH );
-	m_gScreenHeight = glutGet( GLUT_WINDOW_HEIGHT );
-	Mat4 projection = Mat4();
-	projection.Orthographic( 0.0f, ( float )m_gScreenWidth, 0.0f, ( float )m_gScreenHeight );
-
-	//compile shader for background plane
+bool Console::CompileConsoleShaders() {
 	m_backgroundShader = new Shader();
 	if( !m_backgroundShader->CompileShaderFromCSTR( s_background_vshader_source, s_background_fshader_source ) ){
 		return false;
@@ -115,6 +112,31 @@ bool Console::Init( char * fontRelativePath ) {
 	m_backgroundShader->UseProgram();
 	Vec3 black = Vec3( 0.0, 0.0, 0.0 );
 	m_backgroundShader->SetUniform3f( "color", 1, black.as_ptr() );
+
+	//init text shader
+	Mat4 projection = Mat4();
+	projection.Orthographic( 0.0f, ( float )m_gScreenWidth, 0.0f, ( float )m_gScreenHeight );
+	m_shader = m_shader->GetShader( "text" );
+	m_shader->UseProgram();
+	m_shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
+
+	return true;
+}
+
+/*
+================================
+Console::Init
+================================
+*/
+bool Console::Init( char * fontRelativePath ) {
+	//get window properties
+	m_gScreenWidth = glutGet( GLUT_WINDOW_WIDTH );
+	m_gScreenHeight = glutGet( GLUT_WINDOW_HEIGHT );
+
+	//compile shader for background plane
+	if ( CompileConsoleShaders() == false ) {
+		return false;
+	}
 
 	//create background plane geo
 	InitBackgroundGeo( m_gScreenWidth, m_gScreenHeight );
@@ -138,11 +160,6 @@ bool Console::Init( char * fontRelativePath ) {
 		printf( "ERROR::FREETYPE: Failed to set pixel size" );
 		return false;
 	}
-
-	//init text shader
-	m_shader = m_shader->GetShader( "text" );
-	m_shader->UseProgram();
-	m_shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
 
 	//init VAO and VBO used to hold text geo. this gets updated every time text is rendered in RenderText()
 	InitTextGeo();
@@ -277,6 +294,27 @@ void Console::UpdateLog() {
 	const float textCursorPos_y = ( float )( m_gScreenHeight - inputLine_y );
 	Vec3 white = Vec3( 1.0, 1.0, 1.0 );
 	RenderText( m_currentString, x_offset, ( float )( m_gScreenHeight - inputLine_y ), 1.0f, white.as_ptr(), true );
+}
+
+/*
+================================
+Console::DrawFPS
+================================
+*/
+void Console::DrawFPS( double sec ) {
+	Vec3 color( 0.0f, 1.0f, 0.0f );
+
+	//draw fps
+	unsigned int fps = ( unsigned int )( 1.0 / sec );
+	Str frameRate( std::to_string( fps ).c_str() );	
+	RenderText( frameRate, m_gScreenWidth - 60, m_gScreenHeight - 35, 2.0f, color.as_ptr() );
+
+	//draw ms
+	double milliseconds = sec * 1000.0;
+	Str timeStr( std::to_string( milliseconds ).c_str() );
+	timeStr = timeStr.Substring( 0, 5 );
+	timeStr.Append( " ms" );
+	RenderText( timeStr, m_gScreenWidth - 70, m_gScreenHeight - 50, 1.0f, color.as_ptr() );
 }
 
 /*

@@ -20,9 +20,15 @@ void main() {
 	TexCoord = aUV;
 
 	//compute tangent space matrix
-	mat3 model_noScale = mat3( transpose( inverse( model ) ) );
-	vec3 T = normalize( model_noScale * aTangent );
-	vec3 N = normalize( model_noScale * aNormal );
+	//mat3 model_noScale = mat3( transpose( inverse( model ) ) );
+
+	mat3 model_noScale = mat3( model );
+	model_noScale[0] = normalize( model_noScale[0].xyz );
+	model_noScale[1] = normalize( model_noScale[1].xyz );
+	model_noScale[2] = normalize( model_noScale[2].xyz );
+
+	vec3 T = model_noScale * aTangent;
+	vec3 N = model_noScale * aNormal;
 	T = normalize( T - dot( T, N ) * N ); //re-orthogonalize T with respect to N
 	vec3 B = normalize( aFSign * cross( N, T ) );
 	TBN = transpose( mat3( T, B, N ) );

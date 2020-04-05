@@ -6,12 +6,11 @@ uniform sampler2D albedoTexture;
 uniform sampler2D specularTexture;
 uniform sampler2D normalTexture;
 uniform sampler2D glossTexture;
-uniform sampler2DShadow shadowAtlas;
 
 const float E = 2.71828182846;
 const float PI = 3.14159265359;
+uniform sampler2DShadow shadowAtlas;
 const int MAX_LIGHTS = 16;
-const float MAX_REFLECTION_LOD = 4.0;
 
 struct Position {
 	float x, y, z;
@@ -21,9 +20,10 @@ struct Light {
 	Position pos;
 	Position col;
 	Position dir;
-	float angle;
+	float angle; //splot light only
 	float radius;
 	float max_radius;
+	float dir_radius; //directional light only
 	float brightness;
 	int shadowIdx;
 };
@@ -141,11 +141,11 @@ float LightAttenuation( vec3 P, vec3 lightCenter, float lightRadius, float maxRa
 	//calculate normalized light vector and distance to sphere light surface
 	float r = lightRadius;
 	float d = max( length( lightCenter - P ) - r, 0.0 );
-	 
+	
 	//calculate basic attenuation
 	float denom = d / r + 1.0;
 	float attenuation = brightness / ( denom * denom );
-	 
+	
 	//scale and bias attenuation such that:
 	//	attenuation == 0 at extent of max influence
 	//	attenuation == 1 when d == 0
@@ -153,9 +153,15 @@ float LightAttenuation( vec3 P, vec3 lightCenter, float lightRadius, float maxRa
 	attenuation = max( attenuation, 0.0 );
 
 	//use gausian function to make the attenuation falloff within the lights maxRadius
-	float gaussFactor = pow( E, -4.0 * pow( ( d / maxRadius ), 4.0 ) ) - cutoff;
+	float gaussFactor = pow( E, -4.0 * pow( ( d / maxRadius ), 4.0 ) ) - 0.1;
 
 	return attenuation * gaussFactor;
+}
+
+float distanceToLine( vec3 a, vec3 ab, vec3 v ) {
+	vec3 av = v - a;
+	vec3 closestPos = a + ab * dot( av, ab ) / dot( ab, ab );
+	return length( v - closestPos );
 }
 
 void main() {
@@ -211,8 +217,12 @@ void main() {
 		//specular
 		vec3 specularComponent = G * D * F;
 
-		//for spot lights, but everything outside of radius in shadow by scaling the attenuation
-		if ( currentLight.typeIndex == 2 ) { //spot light
+		//for directional and spot lights, put everything outside of radius in shadow by scaling the attenuation
+		if ( currentLight.typeIndex == 1 ) { //directional light
+			float dist = distanceToLine( lightPos, lightDir, FragPos );
+			float intensity = clamp( ( currentLight.dir_radius - dist ) / 0.01, 0.0, 1.0 );
+			attenuation *= intensity;
+		} else if ( currentLight.typeIndex == 2 ) { //spot light
 			float theta = dot( -lightDir, L );
 			float intensity = clamp( ( theta - currentLight.angle ) / 0.01, 0.0, 1.0 );
 			attenuation *= intensity;

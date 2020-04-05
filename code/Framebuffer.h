@@ -19,10 +19,12 @@ Framebuffer
 */
 class Framebuffer {
 	public:
-		Framebuffer() { m_id = 0; m_multisample = 0; }
+		Framebuffer() { m_id = 0; m_multisample = 0; m_screenVAO = 0; }
 		Framebuffer( std::string colorbufferUniform );
 		Framebuffer( const Framebuffer & rhs ) { m_id = 0; m_multisample = 0; *this = rhs; }
 		~Framebuffer() {};
+
+		void Delete();
 
 		unsigned int GetID() { return m_id; }
 		unsigned int GetWidth() { return m_width; }

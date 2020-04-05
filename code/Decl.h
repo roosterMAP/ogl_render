@@ -31,6 +31,8 @@ class Decl {
 		std::string getType() { return type; }
 		void setType( std::string s ) { type = s; }
 
+		virtual void DeleteAllDecls() {};
+
 		Shader * shader;
 
 	protected:
@@ -46,6 +48,9 @@ Material
 class MaterialDecl : public Decl {
 	public:
 		MaterialDecl() { setType( "material" ); }
+		~MaterialDecl() {};
+		void Delete();
+		void DeleteAllDecls() override;
 
 		static MaterialDecl * GetMaterialDecl( const char * name );
 		bool CompileShader();
@@ -54,11 +59,11 @@ class MaterialDecl : public Decl {
 		std::string m_shaderProg;
 		textureMap m_textures;		
 
+		static resourceMap_t s_matDecls;
+
 	private:
 		static MaterialDecl * LoadMaterialDecl( const char * name );
-		static bool LoadPathsFromFile( const char * decl_relative, std::string &shaderProg, texturePathMap & texturePaths );		
-				
-		static resourceMap_t s_matDecls;
+		static bool LoadPathsFromFile( const char * decl_relative, std::string &shaderProg, texturePathMap & texturePaths );				
 };
 
 #endif

@@ -100,13 +100,34 @@ bool Transform::WorldXfrm( Mat4* model ) {
 	m_xfrm = Mat4();
 	m_xfrm.Translate( m_position );
 
-	m_xfrm = m_xfrm * m_rotation.as_Mat4();
+	Mat4 rotation = m_rotation.as_Mat4();
+
+	Mat4 scale = Mat4();
 	for ( unsigned int i = 0; i < 3; i++ ) {
-		m_xfrm[i][i] *= m_scale[i];
+		scale[i][i] = m_scale[i];
 	}
 
+	m_xfrm = m_xfrm * rotation * scale;
 	*model = m_xfrm;
 
+	return true;
+}
+
+ /*
+ ================================
+ Transform::IsFlipped
+ ================================
+ */
+bool Transform::IsFlipped() {
+	unsigned int negCount = 0;
+	for ( unsigned int i = 0; i < 3; i++ ) {
+		if ( m_scale[i] < 0.0f ) {
+			negCount += 1;
+		}
+	}
+	if ( negCount == 0 || negCount == 2 ) {
+		return false;
+	}
 	return true;
 }
 
@@ -122,6 +143,23 @@ unsigned int combine( unsigned int a, unsigned int b ) {
       times *= 10;
    }
    return a * times + b;
+}
+
+/*
+================================
+Mesh::Delete
+	-delete surfaces and transforms
+================================
+*/
+void Mesh::Delete() {
+	for ( unsigned int i = 0; i < m_surfaces.size(); i++ ) {
+		delete m_surfaces[i];
+		m_surfaces[i] = nullptr;
+	}
+	for ( unsigned int i = 0; i < m_transforms.size(); i++ ) {
+		delete m_transforms[i];
+		m_transforms[i] = nullptr;
+	}
 }
 
 /*
@@ -238,7 +276,9 @@ bool Mesh::LoadMSHFromFile( const char * msh_relative ) {
 
 				//cleanup
 				delete[] polygon_vert_index_list;
+				polygon_vert_index_list = nullptr;
 				delete[] polygon_vert_pos_list;
+				polygon_vert_pos_list = nullptr;
 			}
 
 		} else {
@@ -455,8 +495,11 @@ bool Mesh::LoadOBJFromFile( const char * obj_relative ) {
 
 			//cleanup
 			delete[] polygon_vert_index_list;
+			polygon_vert_index_list = nullptr;
 			delete[] polygon_vert_pos_list;
+			polygon_vert_pos_list = nullptr;
 			delete[] polygon_vID_list;
+			polygon_vID_list = nullptr;
 
 		} else if ( sscanf( buff, "usemtl  %s", &buff ) == 1 ) { //load material
 			if ( m_materials.size() > 0 ) {
@@ -580,6 +623,8 @@ void Mesh::AddSurface() {
 		newSurface->vCount = m_surfaceVerts.size();
 		newSurface->tris = m_surfaceTris;
 		newSurface->triCount = m_surfaceTris.size();
+		newSurface->VAO = 0;
+		newSurface->VAO_flipped = 0;
 
 		//Generate Mikk Tangent Space and initialize tangents for verts in newSurface
 		SMikkTSpaceInterface mikk_interface = { mikk_getNumFaces,
@@ -637,10 +682,13 @@ unsigned int Mesh::LoadVAO( const unsigned int surfaceIdx ) {
 	glEnableVertexAttribArray( 2 );
 	glVertexAttribPointer( 2, 2, GL_FLOAT, GL_FALSE, sizeof( vert_t ), ( void* )offsetof( vert_t, uv ) ); //uvs
 
-	//unbind VBO and VAO
+	//unbind VBO, EBO, and VAO
 	glBindBuffer( GL_ARRAY_BUFFER, 0 );
-	//glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, 0 ); remember: do NOT unbind the EBO while a VAO is active because the bound element buffer object IS stored in the VAO. keep the EBO bound.
 	glBindVertexArray( 0 );
+	glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, 0 );
+
+	glDeleteBuffers( 1, &VBO );
+	glDeleteBuffers( 1, &EBO );
 
 	currentSurface->VAO = VAO;
 
@@ -654,11 +702,24 @@ unsigned int Mesh::LoadVAO( const unsigned int surfaceIdx ) {
  */
 void Mesh::DrawSurface( unsigned int surfaceIdx ) {
 	assert( surfaceIdx < m_surfaces.size() );
-	glBindVertexArray( m_surfaces[surfaceIdx]->VAO );
-	glDrawElementsInstanced( GL_TRIANGLES, m_surfaces[surfaceIdx]->triCount * 3, GL_UNSIGNED_INT, 0, m_transforms.size() );
+
+	//draw instances with non-inverted orientations
+	if ( m_firstFlippedTransformIdx > 0 ) {
+		glBindVertexArray( m_surfaces[surfaceIdx]->VAO );
+		glDrawElementsInstanced( GL_TRIANGLES, m_surfaces[surfaceIdx]->triCount * 3, GL_UNSIGNED_INT, 0, m_firstFlippedTransformIdx );
+	}
+
+	//draw instances with inverted orientations
+	const unsigned int flippedInstanceCount = m_transforms.size() - m_firstFlippedTransformIdx;
+	if ( flippedInstanceCount > 0 ) {
+		glBindVertexArray( m_surfaces[surfaceIdx]->VAO_flipped );
+		glFrontFace( GL_CW );
+		glDrawElementsInstanced( GL_TRIANGLES, m_surfaces[surfaceIdx]->triCount * 3, GL_UNSIGNED_INT, 0, flippedInstanceCount );
+		glFrontFace( GL_CCW );
+	}
+
 	glBindVertexArray( 0 );
 }
-
 
 /*
  ================================
@@ -673,6 +734,18 @@ Cube::Cube( Str matName ) {
 	if( !matName.IsEmpty() ) { //allow cubes with no materials
 		LoadDecl();
 	}
+}
+
+/*
+================================
+Cube::Delete
+================================
+*/
+void Cube::Delete() {
+	glDeleteVertexArrays( 1, &( m_surface->VAO ) );
+	glDeleteVertexArrays( 1, &( m_surface->VAO_flipped ) );
+	delete m_surface;
+	m_surface = nullptr;
 }
 
 /*
@@ -741,6 +814,9 @@ unsigned int Cube::LoadVAO() {
 	glBufferData( GL_ARRAY_BUFFER, sizeof( verts ), &verts, GL_STATIC_DRAW );
 	glEnableVertexAttribArray( 0 );
 	glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof( float ), ( void * )0 );
+	glBindVertexArray( 0 );
+	glBindBuffer( GL_ARRAY_BUFFER, 0 );
+	glDeleteBuffers( 1, &VBO );
 	return VAO;
 }
 
@@ -749,7 +825,7 @@ unsigned int Cube::LoadVAO() {
  Cube::DrawSurface
  ================================
  */
-void Cube::DrawSurface( bool flip ) {
+void Cube::DrawSurface( bool flip ) const {
 	if ( flip ) {
 		glFrontFace( GL_CW );
 	}

@@ -103,6 +103,7 @@ static GLuint gCurrentProgram = 0;
  */
 Shader::Shader() :
 mShaderProgram( 0 ) {
+	m_pinned = false;
 }
 
 /*
@@ -112,6 +113,8 @@ mShaderProgram( 0 ) {
  */
 void Shader::DeleteProgram() {
 	glDeleteProgram( mShaderProgram );
+	m_buffers.clear();
+	mShaderProgram = 0;
 }
 
 /*
@@ -120,13 +123,62 @@ void Shader::DeleteProgram() {
  ================================
  */
 void Shader::DeleteAllPrograms() {
-	resourceMap_s::iterator it;
+	resourceMap_s::iterator it = s_shaders.begin();
 	while ( it != s_shaders.end() ) {
 		Shader * delShader = it->second;
-		delShader->DeleteProgram();
-		for ( unsigned int i = 0; i < delShader->m_buffers.size(); i++ ) {
-			delete delShader->m_buffers[i];
+		if ( delShader->m_pinned == false ) {
+			delShader->DeleteProgram();
+			for ( unsigned int i = 0; i < delShader->m_buffers.size(); i++ ) {
+				delete delShader->m_buffers[i];
+				delShader->m_buffers[i] = nullptr;
+			}
+			resourceMap_s::iterator toErase = it;
+			++it;
+			s_shaders.erase( toErase );
+		} else {
+			++it;
 		}
+	}
+	
+	//weird shit... some buffers get pinned...
+	//empty buffers
+	resourceMap_b::iterator b_it = Buffer::s_buffers.begin();
+	while ( b_it != Buffer::s_buffers.end() ) {
+		Buffer * delBuffer = b_it->second;
+		if ( delBuffer->m_pinned == false ) {
+			resourceMap_b::iterator toErase = b_it;
+			++b_it;
+			Buffer::s_buffers.erase( toErase );
+		} else {
+			++b_it;
+		}
+	}
+	Buffer::s_buffers.clear();
+}
+
+/*
+ ================================
+ Shader::PinShader
+	-Prevents this shader and its buffers from being deleted
+ ================================
+ */
+void Shader::PinShader() {
+	m_pinned = true;
+	for ( unsigned int i = 0; i < m_buffers.size(); i++ ) {
+		m_buffers[i]->m_pinned = true;
+	}
+}
+
+/*
+ ================================
+ Shader::UnpinShader
+	-Makes shaders and their buffers deletable
+ ================================
+ */
+void Shader::UnpinShader() {
+	m_pinned = false;
+	for ( unsigned int i = 0; i < m_buffers.size(); i++ ) {
+		m_buffers[i]->m_pinned = false;
 	}
 }
 
@@ -272,6 +324,7 @@ Shader * Shader::LoadShader( const char * sprefix ) {
 		}
 	}
 	delete shader;
+	shader = nullptr;
 
 	return NULL;
 }

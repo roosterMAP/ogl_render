@@ -112,6 +112,7 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 	bool loadingPointLightEntity = false;
 	bool loadingAmbientLightEntity = false;
 	bool loadingEnvProbeEntity = false;
+	bool loadingSkybox = false;
 
 	Transform * currentTransform;
 	Mesh* currentMesh;
@@ -132,7 +133,7 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 				loadingMeshEntity = false;
 			} else if ( sscanf_s( buff, "\tpos %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) {
 				currentTransform->SetPosition( Vec3( val3 ) );
-			} else if ( sscanf_s( buff, "\trot %f %f %f %f %f %f %f %f %f", &val9[0][0], &val9[0][1], &val9[0][2], &val9[1][0], &val9[1][1], &val9[1][2], &val9[2][0], &val9[2][1], &val9[2][2] ) == 9 ) {
+			} else if ( sscanf_s( buff, "\trot %f %f %f %f %f %f %f %f %f", &val9[0][0], &val9[1][0], &val9[2][0], &val9[0][1], &val9[1][1], &val9[2][1], &val9[0][2], &val9[1][2], &val9[2][2] ) == 9 ) {
 				currentTransform->SetRotation( Mat3( val9 ) );
 			} else if ( sscanf_s( buff, "\tscl %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) {
 				currentTransform->SetScale( Vec3( val3 ) );
@@ -207,6 +208,16 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 			} else if ( sscanf_s( buff, "\tpos %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //position
 				currentEnvProbe->SetPosition( Vec3( val3 ) );
 			}
+		} else if ( loadingSkybox ) { //load skybox material
+			if ( strncmp( buff, "}", 1 ) == 0 ) {
+				loadingSkybox = false;
+			} else {
+				Str skyboxMatDeclName = Str( buff );
+				skyboxMatDeclName.Strip();
+				skyboxMatDeclName.ReplaceChar( '/', '\\' );
+				Cube * skybox = new Cube( skyboxMatDeclName );
+				SetSkybox( skybox );
+			}
 		}
 
 		if ( sscanf( buff, "mesh  %s.obj {", &buff ) == 1 ) { //mesh entity header
@@ -238,7 +249,7 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 
 			//create transform for instance and add to mesh resource
 			currentTransform = new Transform();
-			currentMesh->m_transforms.push_back( currentTransform );			
+			currentMesh->m_transforms.push_back( currentTransform );
 			
 			loadingMeshEntity = true;
 
@@ -267,6 +278,8 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 			m_envProbes[ m_envProbeCount - 1 ] = new EnvProbe();
 			currentEnvProbe = m_envProbes[ m_envProbeCount - 1 ];
 			loadingEnvProbeEntity = true;
+		} else if ( strncmp( buff, "skybox {", 8 ) == 0 ) { //skybox entity header
+			loadingSkybox = true;
 		}
 
 		//clear buff before going to next line
@@ -288,6 +301,131 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 
 /*
 ================================
+Scene::Unload
+================================
+*/
+void Scene::Unload() {
+	//unload mesh resources
+	for ( unsigned int i = 0; i < m_meshCount; i++ ) {
+		Mesh * currentMesh;
+		MeshByIndex( i, &currentMesh );
+
+		//delete all VAOs for current mesh
+		const unsigned int flippedInstanceCount = currentMesh->m_transforms.size() - currentMesh->m_firstFlippedTransformIdx;
+		for ( unsigned int i = 0; i < currentMesh->m_surfaces.size(); i++ ) {
+			surface * currentSurface = currentMesh->m_surfaces[ i ];
+			glDeleteVertexArrays( 1, &( currentSurface->VAO ) );			
+			if ( flippedInstanceCount > 0 ) {
+				glDeleteVertexArrays( 1, &( currentSurface->VAO_flipped ) );
+			}
+		}
+
+		currentMesh->Delete();
+		delete currentMesh;
+		currentMesh = nullptr;
+	}
+	m_meshCount = 0;
+
+	//unload light resources
+	for ( unsigned int i = 0; i < m_lightCount; i++ ) {
+		Light * currentLight;
+		LightByIndex( i, &currentLight );
+		delete currentLight;
+		currentLight = nullptr;
+	}
+	m_lightCount = 0;
+	Light::s_shadowCastingLightCount = 0;
+	Light::s_lightCount = 0;
+
+	//unload env probe resources
+	for ( unsigned int i = 0; i < m_envProbeCount; i++ ) {
+		EnvProbe * currentProbe;
+		EnvProbeByIndex( i, &currentProbe );
+		currentProbe->Delete();
+		delete currentProbe;
+		currentProbe = nullptr;
+	}
+	m_envProbeCount = 0;
+
+	//unload skybox
+	if ( m_skybox != NULL ) {
+		m_skybox->Delete();
+		delete m_skybox;
+		m_skybox = nullptr;
+	}
+}
+
+/*
+================================
+Scene::CreateVAO
+================================
+*/
+const unsigned int Scene::CreateVAO( const surface * s, const unsigned int transformCount, const float * transforms ) const {
+	//create VAO to bind/configure the corresponding VBO(s) and attribute pointer(s)
+	unsigned int VAO, VBO, EBO;
+	glGenVertexArrays( 1, &VAO );
+	glGenBuffers( 1, &VBO );
+	glGenBuffers( 1, &EBO );	
+	
+	//put openGL in the state to bind/configure the VAO FIRST
+	glBindVertexArray( VAO );
+
+	//create BVO
+	glBindBuffer( GL_ARRAY_BUFFER, VBO ); //bind it to GL_ARRAY_BUFFER target. This effectively sets the buffer type.
+	glBufferData( GL_ARRAY_BUFFER, s->vCount * sizeof( vert_t ), &s->verts[0], GL_STATIC_DRAW ); //load vert data into it as static data (wont change)
+
+	//create EBO for indexed drawing of tris
+	glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, EBO );
+	glBufferData( GL_ELEMENT_ARRAY_BUFFER, s->triCount * sizeof( tri_t ), &s->tris[0], GL_STATIC_DRAW );
+
+	//Each vertex attribute takes its data from memory managed by a VBO.
+	//Since the previously defined VBO is still bound before calling glVertexAttribPointer vertex attribute 0 is now associated with its(the VBOs) vertex data.
+	glEnableVertexAttribArray( 0 );
+	glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, sizeof( vert_t ), ( void* )0 ); //position
+	glEnableVertexAttribArray( 1 );
+	glVertexAttribPointer( 1, 3, GL_FLOAT, GL_FALSE, sizeof( vert_t ), ( void* )offsetof( vert_t, norm ) ); //normal
+	glEnableVertexAttribArray( 2 );
+	glVertexAttribPointer( 2, 3, GL_FLOAT, GL_FALSE, sizeof( vert_t ), ( void* )offsetof( vert_t, tang ) ); //tangent
+	glEnableVertexAttribArray( 3 );
+	glVertexAttribPointer( 3, 2, GL_FLOAT, GL_FALSE, sizeof( vert_t ), ( void* )offsetof( vert_t, uv ) ); //uvs
+	glEnableVertexAttribArray( 4 );
+	glVertexAttribPointer( 4, 1, GL_FLOAT, GL_FALSE, sizeof( vert_t ), ( void* )offsetof( vert_t, tSign ) ); //fSign
+
+	//configure instanced array
+	unsigned int transfomrBuffer;
+	glGenBuffers( 1, &transfomrBuffer );
+	glBindBuffer( GL_ARRAY_BUFFER, transfomrBuffer );
+	glBufferData( GL_ARRAY_BUFFER, transformCount * sizeof( Mat4 ), transforms, GL_STATIC_DRAW );
+
+	//set transformation matrices as an instance vertex attribute for the currently bound VAO
+	glEnableVertexAttribArray( 5 );
+	glVertexAttribPointer( 5, 4, GL_FLOAT, GL_FALSE, sizeof( Mat4 ), ( void* )0 );
+	glEnableVertexAttribArray( 6 );
+	glVertexAttribPointer( 6, 4, GL_FLOAT, GL_FALSE, sizeof( Mat4 ), ( void* )( sizeof( Vec4 ) ) );
+	glEnableVertexAttribArray( 7 );
+	glVertexAttribPointer( 7, 4, GL_FLOAT, GL_FALSE, sizeof( Mat4 ), ( void* )( 2 * sizeof( Vec4 ) ) );
+	glEnableVertexAttribArray( 8 );
+	glVertexAttribPointer( 8, 4, GL_FLOAT, GL_FALSE, sizeof( Mat4 ), ( void* )( 3 * sizeof( Vec4 ) ) );
+
+	//use divisor 1 cuz we want to update the content of the vertex attribute when we start to render a new instance
+	glVertexAttribDivisor( 5, 1 );
+	glVertexAttribDivisor( 6, 1 );
+	glVertexAttribDivisor( 7, 1 );
+	glVertexAttribDivisor( 8, 1 );
+
+	//unbind VBO, EBO, and VAO
+	glBindBuffer( GL_ARRAY_BUFFER, 0 );
+	glBindVertexArray( 0 );
+	glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, 0 );
+
+	glDeleteBuffers( 1, &VBO );
+	glDeleteBuffers( 1, &EBO );
+
+	return VAO;
+}
+
+/*
+================================
 Scene::LoadVAOs
 ================================
 */
@@ -295,8 +433,33 @@ void Scene::LoadVAOs() {
 	for ( int i = 0; i < MeshCount(); i++ ) {
 		Mesh * currentMesh = MeshByIndex( i );
 
-		//build list of transforms for each instance
+		//sort the list of transforms so that flipped transforms are at the end of the list
 		const unsigned int instanceCount = currentMesh->m_transforms.size();
+		int end = instanceCount - 1;
+		int n = 0;
+		while( n <= end ) {
+			Transform * currentTransform = currentMesh->m_transforms[n];
+			if ( currentTransform->IsFlipped() ) {
+				for ( int m = end; m >= n; m-- ) {
+					end = m - 1;
+
+					Transform * switchTransform = currentMesh->m_transforms[m];
+					if ( !switchTransform->IsFlipped() ) {
+						//swap n and m
+						Transform * temp = currentMesh->m_transforms[n];
+						currentMesh->m_transforms[n] = currentMesh->m_transforms[m];
+						currentMesh->m_transforms[m] = temp;						
+						break;
+					}
+				}
+			}
+			n += 1;
+		}
+		const unsigned int flippedStartIndex = end + 1;
+		const unsigned int flippedCount = instanceCount - flippedStartIndex;
+		currentMesh->m_firstFlippedTransformIdx = flippedStartIndex;
+
+		//build list of transforms for each instance		
 		Mat4* instanceXfrms;
 		instanceXfrms = new Mat4[instanceCount];
 		for ( unsigned int j = 0; j < instanceCount; j++ ) {
@@ -308,67 +471,15 @@ void Scene::LoadVAOs() {
 
 		//pass each surface (one instance per transform) to the GPU
 		for ( unsigned int j = 0; j < currentMesh->m_surfaces.size(); j++ ) {
-			surface * currentSurface = currentMesh->m_surfaces[j];		
-
-			//create VAO to bind/configure the corresponding VBO(s) and attribute pointer(s)
-			unsigned int VAO, VBO, EBO;
-			glGenVertexArrays( 1, &VAO );
-			glGenBuffers( 1, &VBO );
-			glGenBuffers( 1, &EBO );	
-	
-			//put openGL in the state to bind/configure the VAO FIRST
-			glBindVertexArray( VAO );
-
-			//create BVO
-			glBindBuffer( GL_ARRAY_BUFFER, VBO ); //bind it to GL_ARRAY_BUFFER target. This effectively sets the buffer type.
-			glBufferData( GL_ARRAY_BUFFER, currentSurface->vCount * sizeof( vert_t ), &currentSurface->verts[0], GL_STATIC_DRAW ); //load vert data into it as static data (wont change)
-
-			//create EBO for indexed drawing of tris
-			glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, EBO );
-			glBufferData( GL_ELEMENT_ARRAY_BUFFER, currentSurface->triCount * sizeof( tri_t ), &currentSurface->tris[0], GL_STATIC_DRAW );
-
-			//Each vertex attribute takes its data from memory managed by a VBO.
-			//Since the previously defined VBO is still bound before calling glVertexAttribPointer vertex attribute 0 is now associated with its(the VBOs) vertex data.
-			glEnableVertexAttribArray( 0 );
-			glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, sizeof( vert_t ), ( void* )0 ); //position
-			glEnableVertexAttribArray( 1 );
-			glVertexAttribPointer( 1, 3, GL_FLOAT, GL_FALSE, sizeof( vert_t ), ( void* )offsetof( vert_t, norm ) ); //normal
-			glEnableVertexAttribArray( 2 );
-			glVertexAttribPointer( 2, 3, GL_FLOAT, GL_FALSE, sizeof( vert_t ), ( void* )offsetof( vert_t, tang ) ); //tangent
-			glEnableVertexAttribArray( 3 );
-			glVertexAttribPointer( 3, 2, GL_FLOAT, GL_FALSE, sizeof( vert_t ), ( void* )offsetof( vert_t, uv ) ); //uvs
-			glEnableVertexAttribArray( 4 );
-			glVertexAttribPointer( 4, 1, GL_FLOAT, GL_FALSE, sizeof( vert_t ), ( void* )offsetof( vert_t, tSign ) ); //fSign
-
-			//configure instanced array
-			unsigned int transfomrBuffer;
-			glGenBuffers( 1, &transfomrBuffer );
-			glBindBuffer( GL_ARRAY_BUFFER, transfomrBuffer );
-			glBufferData( GL_ARRAY_BUFFER, instanceCount * sizeof( Mat4 ), &instanceXfrms[0], GL_STATIC_DRAW );
-
-			//set transformation matrices as an instance vertex attribute for the currently bound VAO
-			glEnableVertexAttribArray( 5 );
-			glVertexAttribPointer( 5, 4, GL_FLOAT, GL_FALSE, sizeof( Mat4 ), ( void* )0 );
-			glEnableVertexAttribArray( 6 );
-			glVertexAttribPointer( 6, 4, GL_FLOAT, GL_FALSE, sizeof( Mat4 ), ( void* )( sizeof( Vec4 ) ) );
-			glEnableVertexAttribArray( 7 );
-			glVertexAttribPointer( 7, 4, GL_FLOAT, GL_FALSE, sizeof( Mat4 ), ( void* )( 2 * sizeof( Vec4 ) ) );
-			glEnableVertexAttribArray( 8 );
-			glVertexAttribPointer( 8, 4, GL_FLOAT, GL_FALSE, sizeof( Mat4 ), ( void* )( 3 * sizeof( Vec4 ) ) );
-
-			//use divisor 1 cuz we want to update the content of the vertex attribute when we start to render a new instance
-			glVertexAttribDivisor( 5, 1 );
-			glVertexAttribDivisor( 6, 1 );
-			glVertexAttribDivisor( 7, 1 );
-			glVertexAttribDivisor( 8, 1 );
-
-			//unbind VBO and VAO
-			glBindBuffer( GL_ARRAY_BUFFER, 0 );
-			//glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, 0 ); remember: do NOT unbind the EBO while a VAO is active because the bound element buffer object IS stored in the VAO. keep the EBO bound.
-			glBindVertexArray( 0 );
-
-			currentSurface->VAO = VAO; //init surface VAO member
+			surface * currentSurface = currentMesh->m_surfaces[j];
+			currentSurface->VAO = CreateVAO( currentSurface, flippedStartIndex, instanceXfrms[0].as_ptr() );
+			if ( flippedCount > 0 ) {
+				currentSurface->VAO_flipped = CreateVAO( currentSurface, flippedCount, instanceXfrms[flippedStartIndex].as_ptr() );
+			}
 		}
+
+		delete[] instanceXfrms;
+		instanceXfrms = nullptr;
 	}
 }
 

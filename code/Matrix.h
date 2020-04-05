@@ -88,6 +88,8 @@ class Mat3 {
 
 		unsigned int size() const { return 3; }
 
+		const bool isRotationMatrix() const;
+
 		void transposed();
 		Mat3 transpose();
 		float determinant() const;

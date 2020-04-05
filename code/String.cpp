@@ -156,6 +156,7 @@ Str::operator=
 void Str::operator=( const Str & text ) {
 	m_len = text.m_len;
 	delete[] m_data;
+	m_data = NULL;
 	m_data = new char[ m_len + 1 ];
 	if ( text.m_data != NULL ) {
 		strcpy( m_data, text.m_data );
@@ -171,6 +172,7 @@ Str::operator=
 void Str::operator=( const char * text ) {
 	m_len = strlen( text );
 	delete[] m_data;
+	m_data = NULL;
 	m_data = new char[ m_len + 1 ];
 	strcpy( m_data, text );
 	m_data[m_len] = '\0';
@@ -279,6 +281,7 @@ Str::Clear
 void Str::Clear() {
 	m_len = 0;
 	delete[] m_data;
+	m_data = NULL;
 	char * newStr = new char[ m_len + 1 ];
 	newStr[0] = '\0';
 	m_data = newStr;
@@ -304,6 +307,7 @@ void Str::Append( const char * text ) {
 
 	m_len = newLen;
 	delete[] m_data;
+	m_data = NULL;
 	m_data = newStr;
 	m_data[m_len] = '\0';
 }
@@ -339,6 +343,7 @@ void Str::Insert( const char c, unsigned int idx ) {
 
 	m_len = newLen;
 	delete[] m_data;
+	m_data = NULL;
 	m_data = newStr;
 	m_data[m_len] = '\0';
 }
@@ -368,6 +373,7 @@ void Str::Insert( const char * text, unsigned int idx ) {
 
 	m_len = newLen;
 	delete[] m_data;
+	m_data = NULL;
 	m_data = newStr;
 	m_data[m_len] = '\0';
 }
@@ -402,6 +408,7 @@ void Str::Remove( unsigned int idx ) {
 
 	m_len = newLen;
 	delete[] m_data;
+	m_data = NULL;
 	m_data = newStr;
 	m_data[m_len] = '\0';
 }
@@ -429,6 +436,7 @@ void Str::Remove( unsigned int startIdx, unsigned int endIdx ) {
 
 	m_len = newLen;
 	delete[] m_data;
+	m_data = NULL;
 	m_data = newStr;
 	m_data[m_len] = '\0';
 }
@@ -513,6 +521,7 @@ void Str::ReplaceChar( const char oldChar, const char newChar ) {
 		}
 		m_len = newLen;
 		delete[] m_data;
+		m_data = NULL;
 		m_data = newStr;
 		m_data[m_len] = '\0';
 	} else {
@@ -571,6 +580,7 @@ void Str::Replace( const char * oldText, const char * newText, const bool allOcc
 
 	m_len = newLen;
 	delete[] m_data;
+	m_data = NULL;
 	m_data = newStr;
 	m_data[m_len] = '\0';
 }
@@ -625,6 +635,7 @@ void Str::RStrip() {
 
 	m_len = newLen;
 	delete[] m_data;
+	m_data = NULL;
 	m_data = newStr;
 	m_data[m_len] = '\0';
 }
@@ -652,6 +663,7 @@ void Str::LStrip() {
 
 	m_len = newLen;
 	delete[] m_data;
+	m_data = NULL;
 	m_data = newStr;
 	m_data[m_len] = '\0';
 }
@@ -685,6 +697,7 @@ std::vector<Str> Str::Split( char c ) {
 
 			buffLen = 0;
 			delete[] buff;
+			buff = nullptr;
 			buff = new char[m_len];
 		}
 	}
@@ -692,6 +705,7 @@ std::vector<Str> Str::Split( char c ) {
 		buff[buffLen] = '\0';
 		strList.push_back(  Str( buff ) );
 		delete[] buff;
+		buff = nullptr;
 	}
 
 	return strList;

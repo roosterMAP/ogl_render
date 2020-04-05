@@ -4,15 +4,15 @@ unsigned int Light::s_lightCount = 0;
 unsigned int Light::s_shadowCastingLightCount = 0;
 Shader * Light::s_debugShader = new Shader();
 Shader * Light::s_depthShader = new Shader();
-Framebuffer Light::s_depthBufferAtlas = Framebuffer( "depthMap" );
+Framebuffer * Light::s_depthBufferAtlas = new Framebuffer( "depthMap" );
 unsigned int Light::s_partitionSize = s_depthBufferAtlasSize_min;
 
 float Light::s_lightAttenuationBias = 0.005f;
 
-Mesh Light::s_debugModel;
-Mesh DirectionalLight::s_debugModel_directional;
-Mesh SpotLight::s_debugModel_spot;
-Mesh PointLight::s_debugModel_point;
+Mesh * Light::s_debugModel = new Mesh();
+Mesh * DirectionalLight::s_debugModel_directional = new Mesh();
+Mesh * SpotLight::s_debugModel_spot = new Mesh();
+Mesh * PointLight::s_debugModel_point = new Mesh();
 
 Texture EnvProbe::s_brdfIntegrationMap = Texture();
 
@@ -107,7 +107,7 @@ Light::InitShadowAtlas
 ================================
 */
 void Light::InitShadowAtlas() {
-	if ( s_depthBufferAtlas.GetID() == 0 ) {
+	if ( s_depthBufferAtlas->GetID() == 0 ) {
 		unsigned int atlasSize = 4;
 		if ( s_shadowCastingLightCount > 0 ) {
 			const float mapsPerRow = ceil( sqrt( ( float )s_shadowCastingLightCount ) );
@@ -118,16 +118,21 @@ void Light::InitShadowAtlas() {
 			}
 		}
 
-		s_depthBufferAtlas.CreateNewBuffer( atlasSize, atlasSize, "debug_quad" );
+		s_depthBufferAtlas->CreateNewBuffer( atlasSize, atlasSize, "debug_quad" );
+
+		//pin the depthbuffer shader so that it doesnt get removed when scene is reloaded.
+		Shader * depthBufferShader = s_depthBufferAtlas->GetShader();
+		depthBufferShader->PinShader();
+
 		glDrawBuffer( GL_NONE ); //needed since there is no need for a color attachement
 		glReadBuffer( GL_NONE ); //needed since there is no need for a color attachement
-		s_depthBufferAtlas.AttachTextureBuffer( GL_DEPTH_COMPONENT, GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT, GL_FLOAT );
-		assert( s_depthBufferAtlas.Status() );
-		s_depthBufferAtlas.Unbind();
-		s_depthBufferAtlas.CreateScreen( 0, 0, 512, 512 );
+		s_depthBufferAtlas->AttachTextureBuffer( GL_DEPTH_COMPONENT, GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT, GL_FLOAT );
+		assert( s_depthBufferAtlas->Status() );
+		s_depthBufferAtlas->Unbind();
+		s_depthBufferAtlas->CreateScreen( 0, 0, 512, 512 );
 
 		//set the boundary outside the texture border to a specific border color (white)
-		glBindTexture( GL_TEXTURE_2D, s_depthBufferAtlas.m_attachements[0] );
+		glBindTexture( GL_TEXTURE_2D, s_depthBufferAtlas->m_attachements[0] );
 		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER );
 		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER );
 		float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -145,7 +150,7 @@ Light::DebugDraw
 ================================
 */
 void Light::DebugDraw( Camera * camera, const float * view, const float * projection, int mode ) {
-	assert(  s_depthBufferAtlas.GetID() != 0 );
+	assert(  s_depthBufferAtlas->GetID() != 0 );
 
 	//***********************
 	//Render debug light model
@@ -212,13 +217,13 @@ void Light::DebugDraw( Camera * camera, const float * view, const float * projec
 	//***********************
 	//before drawing the texture to the buffer screen quad, the comparison mode used by shadow sampler needs to be disabled.
 	glActiveTexture( GL_TEXTURE0 );
-	glBindTexture( GL_TEXTURE_2D, s_depthBufferAtlas.m_attachements[0] );
+	glBindTexture( GL_TEXTURE_2D, s_depthBufferAtlas->m_attachements[0] );
 	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE );
 	glBindTexture( GL_TEXTURE_2D, 0 );
 
-	if ( mode < 2 ) { //cvar takes arg. if set to 2, dont draw the depthatlas
+	if ( mode == 1 ) { //cvar takes arg. if set to 1 then draw the depthatlas
 		//draw depth attachement to a quad on the screen
-		s_depthBufferAtlas.Draw( s_depthBufferAtlas.m_attachements[0] );
+		s_depthBufferAtlas->Draw( s_depthBufferAtlas->m_attachements[0] );
 	}
 }
 
@@ -229,9 +234,9 @@ Light::UpdateDepthBuffer
 ================================
 */
 void Light::UpdateDepthBuffer( Scene * scene ) {
-	assert(  s_depthBufferAtlas.GetID() != 0 );
+	assert(  s_depthBufferAtlas->GetID() != 0 );
 
-	s_depthBufferAtlas.Bind();
+	s_depthBufferAtlas->Bind();
 	if ( m_uniformBlock.shadowIdx == 0 ) {
 		glClear( GL_DEPTH_BUFFER_BIT ); //Clear previous frame values
 	}
@@ -260,7 +265,7 @@ void Light::UpdateDepthBuffer( Scene * scene ) {
 		}
 	}
 
-	s_depthBufferAtlas.Unbind();
+	s_depthBufferAtlas->Unbind();
 }
 
 /*
@@ -320,6 +325,7 @@ void Light::SetShadow( const bool shadowCasting ) {
 		m_uniformBlock.shadowIdx = -1;
 		s_shadowCastingLightCount -= 1;
 	}
+
 	m_shadowCaster = shadowCasting;
 }
 
@@ -329,7 +335,7 @@ Light::PassUniforms
 ================================
 */
 void Light::PassUniforms( Shader * shader, int idx ) const {
-	const GLsizeiptr size = sizeof( LightStorage );	
+	const GLsizeiptr size = sizeof( LightStorage );
 
 	//fetch the buffer object from the shader. If its not present, the create and add it.
 	const int block_index = shader->BufferBlockIndexByName( "light_buffer" );
@@ -369,11 +375,11 @@ Light::PassDepthAttribute
 */
 void Light::PassDepthAttribute( Shader* shader, const unsigned int slot ) const {
 	glActiveTexture( GL_TEXTURE0 + slot );
-	glBindTexture( GL_TEXTURE_2D, s_depthBufferAtlas.m_attachements[0] );
+	glBindTexture( GL_TEXTURE_2D, s_depthBufferAtlas->m_attachements[0] );
 	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE );
 	glBindTexture( GL_TEXTURE_2D, 0 );
 
-	shader->SetAndBindUniformTexture( "shadowAtlas", slot, GL_TEXTURE_2D, s_depthBufferAtlas.m_attachements[0] );
+	shader->SetAndBindUniformTexture( "shadowAtlas", slot, GL_TEXTURE_2D, s_depthBufferAtlas->m_attachements[0] );
 }
 
 float distanceToPlane( Vec3 v, Vec3 N, Vec3 P ) {
@@ -525,9 +531,9 @@ DirectionalLight::DirectionalLight
 */
 DirectionalLight::DirectionalLight() {
 	m_uniformBlock.typeIndex = 1;
-	if ( s_debugModel_directional.m_name.Initialized() == false ) {
-		s_debugModel_directional.LoadOBJFromFile( "data\\model\\system\\light\\directionalLight.obj" );
-		s_debugModel_directional.LoadVAO( 0 );
+	if ( s_debugModel_directional->m_name.Initialized() == false ) {
+		s_debugModel_directional->LoadOBJFromFile( "data\\model\\system\\light\\directionalLight.obj" );
+		s_debugModel_directional->LoadVAO( 0 );
 	}
 }
 
@@ -567,9 +573,9 @@ SpotLight::SpotLight
 */
 SpotLight::SpotLight() {
 	m_uniformBlock.typeIndex = 2;
-	if ( s_debugModel_spot.m_name.Initialized() == false ) {
-		s_debugModel_spot.LoadOBJFromFile( "data\\model\\system\\light\\spotLight.obj" );
-		s_debugModel_spot.LoadVAO( 0 );
+	if ( s_debugModel_spot->m_name.Initialized() == false ) {
+		s_debugModel_spot->LoadOBJFromFile( "data\\model\\system\\light\\spotLight.obj" );
+		s_debugModel_spot->LoadVAO( 0 );
 	}
 }
 
@@ -610,9 +616,9 @@ PointLight::PointLight
 */
 PointLight::PointLight() {
 	m_uniformBlock.typeIndex = 3;
-	if ( s_debugModel_point.m_name.Initialized() == false ) {
-		s_debugModel_point.LoadOBJFromFile( "data\\model\\system\\light\\light.obj" );
-		s_debugModel_point.LoadVAO( 0 );
+	if ( s_debugModel_point->m_name.Initialized() == false ) {
+		s_debugModel_point->LoadOBJFromFile( "data\\model\\system\\light\\light.obj" );
+		s_debugModel_point->LoadVAO( 0 );
 	}
 }
 
@@ -679,9 +685,9 @@ PointLight::UpdateDepthBuffer
 ================================
 */
 void PointLight::UpdateDepthBuffer( Scene * scene ) {
-	assert(  s_depthBufferAtlas.GetID() != 0 );
+	assert(  s_depthBufferAtlas->GetID() != 0 );
 
-	s_depthBufferAtlas.Bind();
+	s_depthBufferAtlas->Bind();
 	if ( m_uniformBlock.shadowIdx == 0 ) {
 		glClear( GL_DEPTH_BUFFER_BIT ); //Clear previous frame values
 	}
@@ -709,7 +715,7 @@ void PointLight::UpdateDepthBuffer( Scene * scene ) {
 		}
 	}
 
-	s_depthBufferAtlas.Unbind();
+	s_depthBufferAtlas->Unbind();
 }
 
 /*
@@ -783,9 +789,7 @@ EnvProbe::EnvProbe() {
 	m_meshCount = 0;
 
 	if ( s_brdfIntegrationMap.m_empty ) {
-		if ( !s_brdfIntegrationMap.InitFromFile( "data\\texture\\system\\brdfIntegrationLUT.hdr" ) ) {
-			assert( false );
-		}
+		s_brdfIntegrationMap.InitFromFile_Uncompressed( "data\\texture\\system\\brdfIntegrationLUT.hdr" );
 	}
 }
 
@@ -801,9 +805,25 @@ EnvProbe::EnvProbe( Vec3 pos ) {
 	m_meshCount = 0;
 
 	if ( s_brdfIntegrationMap.m_empty ) {
-		if ( !s_brdfIntegrationMap.InitFromFile( "data\\texture\\system\\brdfIntegrationLUT.hdr" ) ) {
-			assert( false );
-		}
+		s_brdfIntegrationMap.InitFromFile_Uncompressed( "data\\texture\\system\\brdfIntegrationLUT.hdr" );
+	}
+}
+
+/*
+================================
+EnvProbe::Delete
+	-Delete textures from gpu
+================================
+*/
+void EnvProbe::Delete() {
+	const unsigned int id1 = m_irradianceMap.GetName();
+	if ( id1 != CubemapTexture::s_errorCube ) {
+		glDeleteTextures( 1, &id1 );
+	}
+
+	const unsigned int id2 = m_environmentMap.GetName();
+	if ( id1 != CubemapTexture::s_errorCube ) {
+		glDeleteTextures( 1, &id2 );
 	}
 }
 
@@ -859,18 +879,13 @@ bool EnvProbe::BuildProbe( unsigned int probeIdx ) {
 	environment_relativePath.Append( "\\env_" );
 	environment_relativePath.Append( probe_suffix );
 	environment_relativePath.Append( ".hdr" );
-	if ( m_environmentMap.InitFromFile( environment_relativePath.c_str() ) ) {
-		m_environmentMap.PrefilterSpeculateProbe();
-	} else {
-		assert( m_irradianceMap.InitFromFile( "data\\texture\\system\\error_cube.tga" ) );
-	}
+	m_environmentMap.InitFromFile( environment_relativePath.c_str() );
+	m_environmentMap.PrefilterSpeculateProbe();
 
 	//load irradiance map
 	Str irradiance_relativePath = environment_relativePath.Substring( 0, environment_relativePath.Length() - 4 );
 	irradiance_relativePath.Append( "_irr.hdr" );
-	if ( !m_irradianceMap.InitFromFile( irradiance_relativePath.c_str() ) ) {
-		assert( m_irradianceMap.InitFromFile( "data\\texture\\system\\error_cube.tga" ) );
-	}
+	m_irradianceMap.InitFromFile( irradiance_relativePath.c_str() );
 
 	return true;
 }
@@ -891,8 +906,9 @@ void EnvProbe::PassUniforms( Shader* shader, unsigned int slot ) const {
 EnvProbe::RenderCubemaps
 ================================
 */
-std::vector< unsigned int > EnvProbe::RenderCubemaps( const unsigned int cubemapSize ) {
+std::vector< unsigned int > EnvProbe::RenderCubemaps( Shader * shader, const unsigned int cubemapSize ) {
 	glViewport( 0, 0, cubemapSize, cubemapSize ); //Set the OpenGL viewport to be the entire size of the window
+	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE ); //Enabling color writing to the frame buffer
 
 	Scene * scene = Scene::getInstance();
 
@@ -903,6 +919,7 @@ std::vector< unsigned int > EnvProbe::RenderCubemaps( const unsigned int cubemap
 		newFBO.CreateNewBuffer( cubemapSize, cubemapSize, "framebuffer" );
 		newFBO.AttachTextureBuffer( GL_RGB16F, GL_COLOR_ATTACHMENT0, GL_RGB, GL_FLOAT );
 		newFBO.AttachRenderBuffer( GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL_ATTACHMENT );
+		newFBO.CreateScreen( 0, 0, cubemapSize, cubemapSize );
 		if ( !newFBO.Status() ) {
 			assert( false );
 		}
@@ -923,8 +940,8 @@ std::vector< unsigned int > EnvProbe::RenderCubemaps( const unsigned int cubemap
 	//draw skybox
 	glDisable( GL_BLEND );
 	MaterialDecl* skyMat;
-	Cube sceneSkybox = scene->GetSkybox();
-	skyMat = MaterialDecl::GetMaterialDecl( sceneSkybox.m_surface->materialName.c_str() );
+	const Cube * sceneSkybox = scene->GetSkybox();
+	skyMat = MaterialDecl::GetMaterialDecl( sceneSkybox->m_surface->materialName.c_str() );
 	skyMat->BindTextures();
 	for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
 		fbos[faceIdx].Bind();
@@ -932,11 +949,11 @@ std::vector< unsigned int > EnvProbe::RenderCubemaps( const unsigned int cubemap
 		const Mat4 skyBox_viewMat = views[faceIdx].as_Mat3().as_Mat4();
 		skyMat->shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
 		skyMat->shader->SetUniformMatrix4f( "view", 1, false, skyBox_viewMat.as_ptr() );
-		sceneSkybox.DrawSurface( true );
+		sceneSkybox->DrawSurface( true );
 		fbos[faceIdx].Unbind();
 	}
 	glEnable( GL_BLEND );
-	
+
 	//render the scene
 	Light * light = NULL;
 	for ( unsigned int i = 0; i < scene->LightCount(); i++ ) {
@@ -946,18 +963,11 @@ std::vector< unsigned int > EnvProbe::RenderCubemaps( const unsigned int cubemap
 		}
 	}
 
-	//load special shader to render probe
-	Shader * envProbe_shader = new Shader();
-	envProbe_shader = envProbe_shader->GetShader( "cook-torrance-envProbes" );
-
-	//Draw the scene to the main buffer		
-	glViewport( 0, 0, cubemapSize, cubemapSize ); //Set the OpenGL viewport to be the entire size of the window
-	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE ); //Enabling color writing to the frame buffer
-
 	for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
 		fbos[faceIdx].Bind(); //bind the framebuffer so all subsequent drawing is to it.
 		glClear( GL_DEPTH_BUFFER_BIT ); //clear only depth because we wanna keep skybox color
 
+		//draw scene to cubemap face
 		MaterialDecl* matDecl;
 		for ( unsigned int i = 0; i < scene->MeshCount(); i++ ) {
 			Mesh * mesh = NULL;
@@ -974,35 +984,35 @@ std::vector< unsigned int > EnvProbe::RenderCubemaps( const unsigned int cubemap
 				}
 
 				//bind textures
-				envProbe_shader->UseProgram();
+				shader->UseProgram();
 				unsigned int slotCount = 0;
 				textureMap::iterator it = matDecl->m_textures.begin();
 				while ( it != matDecl->m_textures.end() ) {
 					std::string uniformName = it->first;
 					Texture* texture = it->second;
-					envProbe_shader->SetAndBindUniformTexture( uniformName.c_str(), slotCount, texture->GetTarget(), texture->GetName() );
+					shader->SetAndBindUniformTexture( uniformName.c_str(), slotCount, texture->GetTarget(), texture->GetName() );
 
 					slotCount++;
 					it++;
 				}
 
 				//pass in camera data
-				envProbe_shader->SetUniformMatrix4f( "view", 1, false, views[faceIdx].as_ptr() );		
-				envProbe_shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
-				envProbe_shader->SetUniform3f( "camPos", 1, m_position.as_ptr() );
+				shader->SetUniformMatrix4f( "view", 1, false, views[faceIdx].as_ptr() );		
+				shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
+				shader->SetUniform3f( "camPos", 1, m_position.as_ptr() );
 				const int lightCount = ( int )( scene->LightCount() );
-				envProbe_shader->SetUniform1i( "lightCount", 1, &lightCount );
+				shader->SetUniform1i( "lightCount", 1, &lightCount );
 
 				//pass lights data
 				for ( int k = 0; k < scene->LightCount(); k++ ) {
 					scene->LightByIndex( k, &light );
 					if ( k == 0 ) {
-						light->PassDepthAttribute( envProbe_shader, 4 );
+						light->PassDepthAttribute( shader, 4 );
 						const int shadowMapPartitionSize = ( unsigned int )( light->s_partitionSize );
-						envProbe_shader->SetUniform1i( "shadowMapPartitionSize", 1, &shadowMapPartitionSize );
+						shader->SetUniform1i( "shadowMapPartitionSize", 1, &shadowMapPartitionSize );
 					}					
-					light->PassUniforms( envProbe_shader, k );
-				}		
+					light->PassUniforms( shader, k );
+				}
 	
 				//draw surface
 				mesh->DrawSurface( j );
@@ -1011,17 +1021,11 @@ std::vector< unsigned int > EnvProbe::RenderCubemaps( const unsigned int cubemap
 		fbos[faceIdx].Unbind();
 	}
 
-	//envProbe_shader is only used for rendering light probe cubemaps. Delete it once its nolonger needed
-	envProbe_shader->DeleteProgram();
-	delete envProbe_shader;
-
 	//gather all texture ids from color attachments of the fbos
 	std::vector< unsigned int > textureIDs;
-	for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {	
+	for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
 		textureIDs.push_back( fbos[faceIdx].m_attachements[0] );
 	}
-
-
 
 	return textureIDs;
 }

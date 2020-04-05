@@ -1,3 +1,5 @@
+#include <ctime>
+
 #include <GL/glew.h>
 #include <GL/freeglut.h>
 
@@ -28,7 +30,7 @@ void mouseMovement( int x, int y );
 Camera camera( 45.0, Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 1.0f, 0.0f, 0.0f ) );
 Framebuffer mainFBO( "screenTexture" );
 PostProcessManager postProcessManager;
-const unsigned int MSAA_sampleCount = 0;
+const unsigned int MSAA_sampleCount = 4;
 
 Console * g_console = Console::getInstance(); //declare g_console singleton
 
@@ -36,6 +38,7 @@ extern CVar * g_cvar_debugLighting;
 extern CVar * g_cvar_renderLightModels;
 extern CVar * g_cvar_showVertTransform;
 extern CVar * g_cvar_showEdgeHighlights;
+extern CVar * g_cvar_fps;
 
 Scene * g_scene = Scene::getInstance(); //declare g_scene singleton
 
@@ -50,6 +53,7 @@ void ForwardPlus_Prepass( const float * view, const float * projection ) {
 	const Mat4 VPMatrix = Mat4( projection ) * Mat4( view );
 	Light::s_depthShader->UseProgram(); //reuse depth shader from light class
 	Light::s_depthShader->SetUniformMatrix4f( "lightSpaceMatrix", 1, false, VPMatrix.as_ptr() );
+
 	for ( unsigned int i = 0; i < g_scene->MeshCount(); i++ ) {
 		Mesh * mesh = NULL;
 		g_scene->MeshByIndex( i, &mesh );
@@ -115,7 +119,6 @@ void ForwardPlus_Prepass( const float * view, const float * projection ) {
 	const unsigned int y_groups = gScreenHeight / gThreadSize;
 	tilePrepass_shader->DispatchCompute( x_groups, y_groups, 1 );
 	glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT );
-
 }
 
 void RenderDebug( const float * view, const float * perspective, int mode ) {
@@ -347,8 +350,18 @@ DrawFrame
 ================================
 */
 void drawFrame( void ) {
+	//start timer
+	std::clock_t start;
+	double duration;
+	start = std::clock();
+
+	//get key inputs from user
 	keyOperations();
 
+	//keyStates['s'] = false;
+	//keyStates['S'] = false;
+
+	//clear buffers
 	glClearColor( 0.0f, 0.0f, 0.0f, 1.0f );
 	glClearDepth( 1.0f );
 	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT ); //Clear previous frame values
@@ -362,7 +375,7 @@ void drawFrame( void ) {
 	glEnable( GL_BLEND );
 	glBlendFunc( GL_ONE, GL_ZERO );
 	glBlendEquation( GL_FUNC_ADD );	
-	
+
 	//----------------------------------------------
 	//Draw the scene to the post process framebuffer
 	//----------------------------------------------
@@ -410,14 +423,16 @@ void drawFrame( void ) {
 	//draw skybox
 	if ( debugRenderMode == 0 ) {
 		MaterialDecl* skyMat;
-		Cube sceneSkybox = g_scene->GetSkybox();
-		skyMat = MaterialDecl::GetMaterialDecl( sceneSkybox.m_surface->materialName.c_str() );
-		skyMat->BindTextures();
-		Mat4 skyBox_viewMat = view;
-		skyBox_viewMat[3] = Vec4( 0.0f, 0.0f, 0.0f, 1.0f );
-		skyMat->shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
-		skyMat->shader->SetUniformMatrix4f( "view", 1, false, skyBox_viewMat.as_ptr() );
-		sceneSkybox.DrawSurface( true );
+		const Cube * sceneSkybox = g_scene->GetSkybox();
+		if ( sceneSkybox != NULL ) {
+			skyMat = MaterialDecl::GetMaterialDecl( sceneSkybox->m_surface->materialName.c_str() );
+			skyMat->BindTextures();
+			Mat4 skyBox_viewMat = view;
+			skyBox_viewMat[3] = Vec4( 0.0f, 0.0f, 0.0f, 1.0f );
+			skyMat->shader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
+			skyMat->shader->SetUniformMatrix4f( "view", 1, false, skyBox_viewMat.as_ptr() );
+			sceneSkybox->DrawSurface( true );
+		}
 	}
 
 	//if cvar is active, draw normal, tangent, and bitangent of all vertices in scene
@@ -461,8 +476,12 @@ void drawFrame( void ) {
 	//---------------------
 	//Draw g_console
 	//---------------------
-	g_console->UpdateLog();	
-	
+	g_console->UpdateLog();
+	if (  g_cvar_fps->GetState() ) {
+		duration = ( std::clock() - start ) / ( double ) CLOCKS_PER_SEC;
+		g_console->DrawFPS( duration );
+	}
+		
 	glFinish(); //Tell OpenGL to finish all the previous OpenGL commands before continuing
 	glutSwapBuffers(); //Swap the back buffer to the front buffer
 }
@@ -521,6 +540,11 @@ bool glSetup( int argc, char ** argv ) {
 		return false;
 	}
 	printf( "GL_VERSION:  %s\n", ( const char * )glGetString( GL_VERSION ) ); //Print out the installed version of OpenGL on this system
+	
+	//initialize static error textures
+	Texture::s_errorTexture = Texture::InitErrorTexture();
+	CubemapTexture::s_errorCube = CubemapTexture::InitErrorCube();
+	
 	return true;
 }
 
@@ -534,7 +558,6 @@ int main( int argc, char ** argv ) {
 		return 0;
 	}
 
-	//computeShaderTest( "ray_cast" );
 	//configure depth prepass FBO for tile compute shader
 	depthPrepassFBO.Bind();
 	depthPrepassFBO.CreateDefaultBuffer( gScreenWidth, gScreenHeight );
@@ -547,50 +570,10 @@ int main( int argc, char ** argv ) {
 	//initialize g_console
 	g_console->Init( "data\\fonts\\consolab.ttf" );
 
-	//create cubemap for background
-	g_scene->SetSkybox( "material\\hdr_skyboxTest" );
+	//load empty scene
+	Fn_LoadScene( "data\\scenes\\empty.SCN" );
 
-	//build debuglighting shader
-	Shader * debugLighting_shader = new Shader();
-	debugLighting_shader = debugLighting_shader->GetShader( "debugLighting" );
-
-	//build edgeHightlights shader
-	Shader * edgeHighlightShader = new Shader();
-	edgeHighlightShader = edgeHighlightShader->GetShader( "edgeHighlight" );
-
-	//build vert transform shader
-	Shader * vertTransform_shader = new Shader();
-	vertTransform_shader = vertTransform_shader->GetShader( "vertTransform" );
-
-	MaterialDecl * matDecl = NULL;
-	if ( g_scene->LoadFromFile( "data\\scenes\\ibl_test.SCN" ) ) {
-		for ( int n = 0; n < g_scene->MeshCount(); n++ ) {
-			Mesh * mesh = g_scene->MeshByIndex( n );
-			g_scene->MeshByIndex( n, &mesh );
-			if ( NULL == mesh ) {
-				continue;
-			}
-
-			for ( unsigned int i = 0; i < mesh->m_surfaces.size(); i++ ) {
-				matDecl = MaterialDecl::GetMaterialDecl( mesh->m_surfaces[ i ]->materialName.c_str() );
-				if ( matDecl == NULL ) {
-					//load a material that renders pink
-					printf( "Material decl %s failed to load!!!\n", mesh->m_surfaces[i]->materialName.c_str() );
-
-					Str errorMaterialName( "material\\error" );
-					mesh->m_surfaces[ i ]->materialName = errorMaterialName;
-					matDecl = MaterialDecl::GetMaterialDecl( errorMaterialName.c_str() );
-				}
-				if( matDecl->CompileShader() ) {
-					matDecl->BindTextures(); //pass in texture
-				} else {
-					return 0;
-				}
-			}
-		}
-	}
-
-	//create post processing frame buffer
+	//create main framebuffer to draw to
 	mainFBO.CreateNewBuffer( gScreenWidth, gScreenHeight, "framebuffer" );
 	mainFBO.EnableMultisampledAttachments( MSAA_sampleCount );
 	mainFBO.AttachRenderBuffer( GL_RGBA16F, GL_COLOR_ATTACHMENT0 );
@@ -601,15 +584,13 @@ int main( int argc, char ** argv ) {
 	mainFBO.CreateScreen();
 	mainFBO.Unbind();
 
+	//create post processing frame buffer
 	postProcessManager = PostProcessManager( gScreenWidth, gScreenHeight, "postProcess" );
 	postProcessManager.SetBlitParams( Vec2( 0.0, 0.0 ), Vec2( gScreenWidth, gScreenHeight ), Vec2( 0.0, 0.0 ), Vec2( gScreenWidth, gScreenHeight ) );
 	//postProcessManager.BloomEnable( 0.5 );
 	postProcessManager.LUTEnable( "data\\texture\\system\\LUT_default.tga" );
 
 	glutMainLoop(); //Do the infinite loop. This starts glut's inifinite loop.
-
-	//Cleanup
-	Shader::DeleteAllPrograms();
 
 	return 0;
 }
@@ -658,7 +639,7 @@ keyOperations
 ================================
 */
 void keyOperations() {
-	const float camSpeed = 0.001f;
+	const float camSpeed = 0.01f;
 
 	//global keys
 	if ( keyStates['`'] == true ) { //g_console toggle

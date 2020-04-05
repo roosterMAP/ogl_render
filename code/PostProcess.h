@@ -18,7 +18,7 @@ class PostProcessManager {
 	public:
 		PostProcessManager() { m_bloomEnabled = false; m_lutEnabled = false; };
 		PostProcessManager( unsigned int width, unsigned int height, const char * shaderPrefix );
-		~PostProcessManager() {}; //delete[] m_bloomFBOs; why doesnt this work?
+		~PostProcessManager() {};
 
 		void SetBlitParams( Vec2 srcMin, Vec2 srcMax, Vec2 dstMin, Vec2 dstMax );
 		void BlitFramebuffer( Framebuffer * inputFBO );
@@ -38,7 +38,7 @@ class PostProcessManager {
 
 		bool m_bloomEnabled;
 		Vec3 m_bloomThreshold;
-		Framebuffer * m_bloomFBOs;
+		Framebuffer m_bloomFBOs[2];
 		Framebuffer m_bloomThresholdFBO;
 		unsigned int m_bloomRenderTarget_idx;
 

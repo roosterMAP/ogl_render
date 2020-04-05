@@ -179,5 +179,31 @@ makeDir
 =================================
 */
 void makeDir( const char * dirName ) {
-	mkdir( dirName );
+	unsigned int len = strlen( dirName );
+	char * buff;
+	if ( dirName[len-1] == '\\' || dirName[len-1] == '/' ) {
+		buff = new char[len];
+	} else {
+		len += 1;
+		buff = new char[len];
+		buff[len] = '\\';
+	}
+	for ( unsigned int i = 0; i < len; i++ ) {
+		buff[i] = dirName[i];
+	}
+
+	unsigned int i = 0;
+	while( i <= len ){
+		if ( buff[i] == '\\' || buff[i] == '/' ) {
+			if ( dirExists( buff ) == false ) {
+				buff[i] = '\0';
+				mkdir( buff );
+			}
+		}
+		buff[i] = dirName[i];
+		i += 1;
+	}
+
+	delete[] buff;
+	buff = nullptr;
 }

@@ -50,9 +50,10 @@ Console
 class Console {
 	public:
 		static Console* getInstance();
-		~Console() { delete m_shader; delete m_backgroundShader; }
+		~Console() { delete m_shader; m_shader = nullptr; delete m_backgroundShader; m_backgroundShader = nullptr; }
 
 		bool Init( char * fontRelativePath );
+		bool CompileConsoleShaders();
 		bool GetState() { return m_isActive; }
 		void ToggleState() { m_isActive = !m_isActive; }
 
@@ -70,6 +71,8 @@ class Console {
 
 		void AddError( Str text );	//print text in red		
 		void AddError( const char * text ) { Str strText = Str( text ); AddError( strText ); }
+
+		void DrawFPS( double sec );
 
 		void UpdateLog();	//draw the console to the screen
 		void UpdateInputLine( char inputChar ); //update input line

@@ -9,13 +9,17 @@ PostProcessManager::PostProccessManager
 PostProcessManager::PostProcessManager( unsigned int width, unsigned int height, const char * shaderPrefix ) {
 	m_bloomEnabled = false;
 	m_lutEnabled = false;
+	m_lutTexture = NULL;
 
-	m_PostProcessFBO = Framebuffer( "screenTexture" );	
+	m_PostProcessFBO = Framebuffer( "screenTexture" );
 	m_PostProcessFBO.CreateNewBuffer( width, height, shaderPrefix );
 	m_PostProcessFBO.AttachTextureBuffer( GL_RGBA16F, GL_COLOR_ATTACHMENT0, GL_RGBA, GL_FLOAT );
 	m_PostProcessFBO.AttachRenderBuffer();
 	m_PostProcessFBO.CreateScreen();
 	m_PostProcessFBO.Unbind();
+
+	Shader * postProcessQuad_shader = m_PostProcessFBO.GetShader();
+	postProcessQuad_shader->PinShader();
 }
 
 /*
@@ -119,7 +123,9 @@ void linearGaussianBlur( unsigned int tapCount, float ** offsets_linearSampling,
 
 	//cleanup
 	delete[] weights;
+	weights = nullptr;
 	delete[] offsets;
+	offsets = nullptr;
 }
 
 /*
@@ -144,7 +150,6 @@ bool PostProcessManager::BloomEnable( float resScale ) {
 	m_bloomThreshold = Vec3( 0.2126, 0.7152, 0.0722 );	//hard coded for now
 	
 	//init bloom framebuffers
-	m_bloomFBOs = new Framebuffer[2];
 	for ( unsigned int i = 0; i < 2; i++ ){
 		m_bloomFBOs[i].SetColorBufferUniform( "image" );
 		m_bloomFBOs[i].CreateNewBuffer( ( unsigned int )m_PostProcessFBO.GetWidth() * resScale, ( unsigned int )m_PostProcessFBO.GetHeight() * resScale, "bloom_gaussian" );
@@ -167,7 +172,9 @@ bool PostProcessManager::BloomEnable( float resScale ) {
 	bloomShader->SetUniform1f( "offsets", coefCount, offsets );
 	bloomShader->SetUniform1f( "weights", coefCount, weights );
 	delete[] weights;
+	weights = nullptr;
 	delete[] offsets;
+	offsets = nullptr;
 
 	return true;
 }

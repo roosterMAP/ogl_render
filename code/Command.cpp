@@ -17,6 +17,7 @@ CVar * g_cvar_renderLightModels = new CVar();
 CVar * g_cvar_showVertTransform = new CVar();
 CVar * g_cvar_showEdgeHighlights = new CVar();
 CVar * g_cvar_brdfIntegrateLUT = new CVar();
+CVar * g_cvar_fps = new CVar();
 
 CommandSys * g_cmdSys = CommandSys::getInstance(); //declare g_cmdSys singleton
 
@@ -73,6 +74,20 @@ void Fn_ShowVertTransforms( Str args ) {
 		g_cvar_showVertTransform->SetState( false );
 	} else if ( atoi( args.c_str() ) == 1 ) {
 		g_cvar_showVertTransform->SetState( true );
+	}
+}
+
+/*
+================================
+Fn_FrameCounter
+================================
+*/
+void Fn_FPS( Str args ) {
+	//toggle the state of the cvar
+	if ( g_cvar_fps->GetState() ) {
+		g_cvar_fps->SetState( false );
+	} else {
+		g_cvar_fps->SetState( true );
 	}
 }
 
@@ -233,6 +248,7 @@ void Fn_EquirectangularToCubeMap( Str args ) {
 			cubeMap_absolute += "_cube.tga";
 			stbi_write_tga( cubeMap_absolute.c_str(), cubemapSize * 6, cubemapSize, 3, output_data ); //save image
 			delete[] output_data;
+			output_data = nullptr;
 
 		} else {
 			console->AddError( "equirectangularToCubeMap :: Equirectangular image could not be found!!!" );
@@ -290,6 +306,7 @@ void Fn_EquirectangularToCubeMap( Str args ) {
 			cubeMap_absolute += "_cube.hdr";
 			stbi_write_hdr( cubeMap_absolute.c_str(), cubemapSize * 6, cubemapSize, 3, output_data ); //save image
 			delete[] output_data;
+			output_data = nullptr;
 
 		} else {
 			console->AddError( "equirectangularToCubeMap :: Equirectangular image could not be found!!!" );
@@ -330,97 +347,147 @@ void Fn_ComputeIrradianceMap( Str args ) {
 	Str cubeMap_absolute = Str( imgPath );
 
 	CubemapTexture cubemapTexture = CubemapTexture();
-	if ( cubemapTexture.InitFromFile( cubemap_relative.c_str() ) ) {		
-		const int height = 128;
-		const int width = 128 * 6;
-		const int chanCount = cubemapTexture.GetChanCount();
+	cubemapTexture.InitFromFile( cubemap_relative.c_str() );	
+	const int height = 128;
+	const int width = 128 * 6;
+	const int chanCount = cubemapTexture.GetChanCount();
 
-		//create framebuffer whose color attachement we are drawing to
-		Framebuffer irradianceFBO( "cubemap" );
-		irradianceFBO.CreateNewBuffer( height, height, "cubemap" );
-		irradianceFBO.AttachCubeMapTextureBuffer( GL_RGB16F, GL_COLOR_ATTACHMENT0, GL_RGB, GL_FLOAT );
-		if ( !irradianceFBO.Status() ) {
-			assert( false );
-		}
+	//create framebuffer whose color attachement we are drawing to
+	Framebuffer irradianceFBO( "cubemap" );
+	irradianceFBO.CreateNewBuffer( height, height, "cubemap" );
+	irradianceFBO.AttachCubeMapTextureBuffer( GL_RGB16F, GL_COLOR_ATTACHMENT0, GL_RGB, GL_FLOAT );
+	if ( !irradianceFBO.Status() ) {
+		assert( false );
+	}
 
-		//compile irradiance convolution shader and pass uniforms
-		Shader * shaderProg = new Shader();
-		shaderProg = shaderProg->GetShader( "irradiance_convolution" );
-		shaderProg->UseProgram();
-		shaderProg->SetAndBindUniformTexture( "environmentMap", 0, cubemapTexture.GetTarget(), cubemapTexture.GetName() );
-		Mat4 projection = Mat4();
-		projection.Perspective( to_radians( 90.0f ), 1.0f, 0.1f, 10.0f );
-		shaderProg->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
-		Mat4 views[] = { Mat4(), Mat4(), Mat4(), Mat4(), Mat4(), Mat4() };
-		views[0].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
-		views[1].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( -1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
-		views[2].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, 1.0f, 0.0f ), Vec3( 0.0f, 0.0f, 1.0f ) );
-		views[3].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ), Vec3( 0.0f, 0.0f, -1.0f ) );
-		views[4].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, 0.0f, 1.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
-		views[5].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, 0.0f, -1.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+	//compile irradiance convolution shader and pass uniforms
+	Shader * shaderProg = new Shader();
+	shaderProg = shaderProg->GetShader( "irradiance_convolution" );
+	shaderProg->UseProgram();
+	shaderProg->SetAndBindUniformTexture( "environmentMap", 0, cubemapTexture.GetTarget(), cubemapTexture.GetName() );
+	Mat4 projection = Mat4();
+	projection.Perspective( to_radians( 90.0f ), 1.0f, 0.1f, 10.0f );
+	shaderProg->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
+	Mat4 views[] = { Mat4(), Mat4(), Mat4(), Mat4(), Mat4(), Mat4() };
+	views[0].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+	views[1].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( -1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+	views[2].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, 1.0f, 0.0f ), Vec3( 0.0f, 0.0f, 1.0f ) );
+	views[3].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ), Vec3( 0.0f, 0.0f, -1.0f ) );
+	views[4].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, 0.0f, 1.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+	views[5].LookAt( Vec3( 0.0f, 0.0f, 0.0f ), Vec3( 0.0f, 0.0f, -1.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
 
-		//draw to irradianceFBO	by convoluting each face of the environment cubemap
-		glViewport( 0, 0, height, height );
-		irradianceFBO.Bind();
-		Cube renderBox = Cube( "" );
-		for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
-			shaderProg->SetUniformMatrix4f( "view", 1, false, views[faceIdx].as_ptr() );
-			glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + faceIdx, irradianceFBO.m_attachements[0], 0 );
-			glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
-			renderBox.DrawSurface( true );
-		}
-		irradianceFBO.Unbind();
-		glViewport( 0, 0, glutGet( GLUT_WINDOW_WIDTH ), glutGet( GLUT_WINDOW_HEIGHT ) );
+	//draw to irradianceFBO	by convoluting each face of the environment cubemap
+	glViewport( 0, 0, height, height );
+	irradianceFBO.Bind();
+	Cube renderBox = Cube( "" );
+	for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
+		shaderProg->SetUniformMatrix4f( "view", 1, false, views[faceIdx].as_ptr() );
+		glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + faceIdx, irradianceFBO.m_attachements[0], 0 );
+		glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+		renderBox.DrawSurface( true );
+	}
+	irradianceFBO.Unbind();
+	glViewport( 0, 0, glutGet( GLUT_WINDOW_WIDTH ), glutGet( GLUT_WINDOW_HEIGHT ) );
 
-		//copy irradiance texture data from gpu to cpu
-		float * output_data = new float[ width * height * chanCount ];
-		float * cubemapFace_data = new float[ height * height * chanCount ];
-		for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
-			//copy from gpu to cubemapFace_data
-			glBindTexture( GL_TEXTURE_CUBE_MAP, irradianceFBO.m_attachements[0] );
-			glGetTexImage( GL_TEXTURE_CUBE_MAP_POSITIVE_X + faceIdx, 0, GL_RGB,  GL_FLOAT, cubemapFace_data );
+	//copy irradiance texture data from gpu to cpu
+	float * output_data = new float[ width * height * chanCount ];
+	float * cubemapFace_data = new float[ height * height * chanCount ];
+	for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
+		//copy from gpu to cubemapFace_data
+		glBindTexture( GL_TEXTURE_CUBE_MAP, irradianceFBO.m_attachements[0] );
+		glGetTexImage( GL_TEXTURE_CUBE_MAP_POSITIVE_X + faceIdx, 0, GL_RGB,  GL_FLOAT, cubemapFace_data );
 
-			//write from cubemapFace_data to output_data
-			for ( int i = 0; i < height; i++ ) {
-				for ( int j = 0; j < height; j++ ) {
-					const int k = faceIdx * height + j;
-					const int output_idx = ( i * width * chanCount ) + ( k * chanCount );
-					const int cubemapFace_idx = ( i * height * chanCount ) + ( j * chanCount );
-					output_data[ output_idx + 0 ] = cubemapFace_data[ cubemapFace_idx + 0 ];
-					output_data[ output_idx + 1 ] = cubemapFace_data[ cubemapFace_idx + 1 ];
-					output_data[ output_idx + 2 ] = cubemapFace_data[ cubemapFace_idx + 2 ];
-				}
+		//write from cubemapFace_data to output_data
+		for ( int i = 0; i < height; i++ ) {
+			for ( int j = 0; j < height; j++ ) {
+				const int k = faceIdx * height + j;
+				const int output_idx = ( i * width * chanCount ) + ( k * chanCount );
+				const int cubemapFace_idx = ( i * height * chanCount ) + ( j * chanCount );
+				output_data[ output_idx + 0 ] = cubemapFace_data[ cubemapFace_idx + 0 ];
+				output_data[ output_idx + 1 ] = cubemapFace_data[ cubemapFace_idx + 1 ];
+				output_data[ output_idx + 2 ] = cubemapFace_data[ cubemapFace_idx + 2 ];
 			}
 		}
+	}
 
-		//generate output image path
-		Str irradianceMap_absolute = cubeMap_absolute.Substring( 0, cubeMap_absolute.Length() - 4 );
-		irradianceMap_absolute += "_irr.hdr";
-		stbi_write_hdr( irradianceMap_absolute.c_str(), width, height, chanCount, output_data ); //save image
-		delete[] cubemapFace_data;
-		delete[] output_data;
+	//generate output image path
+	Str irradianceMap_absolute = cubeMap_absolute.Substring( 0, cubeMap_absolute.Length() - 4 );
+	irradianceMap_absolute += "_irr.hdr";
+	stbi_write_hdr( irradianceMap_absolute.c_str(), width, height, chanCount, output_data ); //save image
+	delete[] cubemapFace_data;
+	cubemapFace_data = nullptr;
+	delete[] output_data;
+	output_data = nullptr;
 
-		//report on success
-		Str info( "IrradianceMap image saved to: " );
-		info.Append( irradianceMap_absolute );
+	//report on success
+	Str info( "IrradianceMap image saved to: " );
+	info.Append( irradianceMap_absolute );
+	console->AddInfo( info.c_str() );
+
+	//generate relative path for irradiance map
+	Str envmap_relative = Str( cubemap_relative );
+	Str irradianceMap_relative = envmap_relative.Substring( 0, envmap_relative.Length() - 4 );
+	irradianceMap_relative += "_irr.hdr";
+
+	//compress env map
+	if ( Texture::CompressFromFile( irradianceMap_relative.c_str() ) ) {
+		Str info( "Irrmap compressed successfully: " );
+		info.Append( irradianceMap_relative );
 		console->AddInfo( info.c_str() );
+	} else {
+		Str error( "Compression task failed: " );
+		error.Append( irradianceMap_relative );
+		console->AddError( error.c_str() );
 	}
 }
 
 /*
 ================================
 Fn_BuildScene
+	-Compress all scene textures and save to disk
+	-Render env maps and irr maps, compress, and save to disk
 ================================
 */
 void Fn_BuildScene( Str args ) {
 	Console * console = Console::getInstance();
 	Scene * scene = Scene::getInstance();
 
+	//compress scene textures
+    resourceMap_t::iterator it_decl = MaterialDecl::s_matDecls.begin();
+    while ( it_decl != MaterialDecl::s_matDecls.end() ) {
+		MaterialDecl * currentMatDecl = it_decl->second;
+		textureMap::iterator it_tex = currentMatDecl->m_textures.begin();
+		while ( it_tex != currentMatDecl->m_textures.end() ) {
+			Texture * currentTexture = it_tex->second;
+			if ( currentTexture->m_compressed ) {
+				it_tex++;
+				continue;
+			}
+			if ( Texture::CompressFromFile( currentTexture->mStrName ) ) {
+				currentTexture->m_compressed = true;
+				Str info( "Texture compressed successfully: " );
+				info.Append( Str( currentTexture->mStrName ) );
+				console->AddInfo( info.c_str() );
+			} else {
+				Str error( "Compression task failed: " );
+				error.Append( Str( currentTexture->mStrName ) );
+				console->AddError( error.c_str() );
+			}
+			it_tex++;
+
+		}
+		it_decl++;
+    }
+
 	const Str scene_relativePath = scene->GetName();
 	unsigned int idx = scene_relativePath.Find( "scenes" );
 	Str probeName = Str( scene_relativePath.c_str() );
 	probeName.Replace( "data\\scenes\\", "data\\generated\\envprobes\\", false );
 	probeName = probeName.Substring( 0, probeName.Length() - 4 );
+
+	//load special shader to render probe
+	Shader * envProbe_shader = NULL;
+	envProbe_shader = envProbe_shader->GetShader( "cook-torrance-envProbes" );
 
 	const unsigned int chanCount = 3;
 	const unsigned int cubemapSize = 128;
@@ -441,7 +508,7 @@ void Fn_BuildScene( Str args ) {
 		//render the probe
 		EnvProbe * probe = NULL;
 		scene->EnvProbeByIndex( i, &probe );
-		std::vector< unsigned int > envCubemapTextureIDs = probe->RenderCubemaps( cubemapSize );
+		std::vector< unsigned int > envCubemapTextureIDs = probe->RenderCubemaps( envProbe_shader, cubemapSize );
 
 		//copy env texture data from gpu to cpu
 		float * output_data = new float[ cubemapSize * 6 * cubemapSize * chanCount ];
@@ -474,15 +541,30 @@ void Fn_BuildScene( Str args ) {
 		Str environment_absolutePath = Str( imgPath );
 		stbi_write_hdr( environment_absolutePath.c_str(), cubemapSize * 6, cubemapSize, chanCount, output_data ); //save image
 		delete[] cubemapFace_data;
+		cubemapFace_data = nullptr;
 		delete[] output_data;
+		output_data = nullptr;
 
 		//report on success
 		Str info( "Envmap image saved to: " );
 		info.Append( environment_absolutePath );
 		console->AddInfo( info.c_str() );
 
+		//compress env map
+		if ( Texture::CompressFromFile( environment_relativePath.c_str() ) ) {
+			Str info( "Envmap compressed successfully: " );
+			info.Append( environment_relativePath );
+			console->AddInfo( info.c_str() );
+		} else {
+			Str error( "Compression task failed: " );
+			error.Append( environment_relativePath );
+			console->AddError( error.c_str() );
+		}
+
+		//kickoff irradianceMap creation
 		Fn_ComputeIrradianceMap( environment_relativePath );
 	}
+
 	console->AddInfo( "Scene build successfull." );
 }
 
@@ -537,6 +619,157 @@ void Fn_BRDFIntegrationLUT( Str args ) {
 	Str info( "BRDF Integration LUT image saved to: " );
 	info.Append( Str( imgPath ) );
 	console->AddInfo( info.c_str() );
+
+	delete[] output_data;
+	output_data = nullptr;
+}
+
+/*
+================================
+Fn_LoadScene
+================================
+*/
+void Fn_LoadScene( Str args ) {
+	Console * console = Console::getInstance();
+	if ( args == "" ) {
+		console->AddError( "loadScene :: scene relative path must be provided!!!" );
+		console->AddInfo( "Scene load failed." );
+		return;
+	}
+	args.ReplaceChar( '/', '\\' );
+
+	//ensure the scene file exists
+	char scn_absolute[ 2048 ];
+	RelativePathToFullPath( args.c_str(), scn_absolute );		
+	FILE * fp;
+	fopen_s( &fp, scn_absolute, "rb" );
+	if ( !fp ) {
+		fprintf( stderr, "Error: couldn't open \"%s\"!\n", scn_absolute );
+		console->AddError( "loadScene :: scene file not found!!!" );
+		console->AddInfo( "Scene load failed." );
+		return;
+    }
+	fclose( fp );
+
+	//unload the current scene
+	Scene * scene = Scene::getInstance();
+	scene->Unload();
+
+	//remove all shaders and buffers
+	Shader::DeleteAllPrograms();
+
+	//build debuglighting shader
+	Shader * debugLighting_shader = new Shader();
+	debugLighting_shader = debugLighting_shader->GetShader( "debugLighting" );
+
+	//build edgeHightlights shader
+	Shader * edgeHighlightShader = new Shader();
+	edgeHighlightShader = edgeHighlightShader->GetShader( "edgeHighlight" );
+
+	//build vert transform shader
+	Shader * vertTransform_shader = new Shader();
+	vertTransform_shader = vertTransform_shader->GetShader( "vertTransform" );
+	
+	//build console shaders
+	console->CompileConsoleShaders();
+
+	console->AddInfo( "Scene unload successfull." );
+
+	//load new scene
+	MaterialDecl * matDecl = NULL;
+	if ( scene->LoadFromFile( args.c_str() ) ) {
+		for ( int n = 0; n < scene->MeshCount(); n++ ) {
+			Mesh * mesh = scene->MeshByIndex( n );
+			scene->MeshByIndex( n, &mesh );
+			if ( NULL == mesh ) {
+				continue;
+			}
+
+			for ( unsigned int i = 0; i < mesh->m_surfaces.size(); i++ ) {
+				matDecl = MaterialDecl::GetMaterialDecl( mesh->m_surfaces[ i ]->materialName.c_str() );
+				if ( matDecl == NULL ) {
+					//load a material that renders pink
+					printf( "Material decl %s failed to load!!!\n", mesh->m_surfaces[i]->materialName.c_str() );
+
+					//if material is not found, the mesh surface is modified to use the error material
+					Str errorMaterialName( "material\\error" );
+					mesh->m_surfaces[ i ]->materialName = errorMaterialName;
+					matDecl = MaterialDecl::GetMaterialDecl( errorMaterialName.c_str() );
+				}
+				if( matDecl->CompileShader() ) {
+					matDecl->BindTextures(); //pass in texture
+				} else {
+					assert( false );
+				}
+			}
+		}
+	}
+
+	console->AddInfo( "Scene successfully loaded." );
+}
+
+/*
+===============================
+load_bc7
+===============================
+*/
+void load_bc7( rgba_surface * img, const char* relativePath ) {
+	//get compressed path from tga relativePath
+	Str output_file_relative = Str( relativePath );
+	output_file_relative.ReplaceChar( '/', '\\' );
+	output_file_relative.Replace( "data\\texture\\", "data\\generated\\texture\\", false );
+	output_file_relative.Replace( ".tga", ".bc7", false );
+
+	//get absolute path
+	char output_file_absolute[ 2048 ];
+	RelativePathToFullPath( output_file_relative.c_str(), output_file_absolute );
+	
+	//open file
+	FILE * fs = fopen( output_file_absolute, "rb" );
+	if ( !fs ) {
+		printf( "cant find bc7 file!!!\n" );
+		return;
+	}
+
+	//load header
+	struct bc7_header {
+		uint8_t blockdim_x;
+		uint8_t blockdim_y;
+		uint8_t xsize;
+		uint8_t ysize;
+	};
+    bc7_header file_header;
+
+	fread( &file_header, sizeof( bc7_header ), 1, fs );
+
+	img->width = ( int )file_header.xsize;
+	img->height = ( int )file_header.ysize;
+
+	//load img data
+	const size_t bytes_per_block = 16;
+	const size_t ptr_size = ( int )file_header.blockdim_x * ( int )file_header.blockdim_y * ( int )bytes_per_block;
+	img->ptr = new uint8_t[ptr_size];
+	fread( img->ptr, ptr_size, 1, fs );
+
+	//close file
+	fclose( fs );
+}
+
+/*
+================================
+Fn_ReloadScene
+================================
+*/
+void Fn_ReloadScene( Str args ) {
+	Console * console = Console::getInstance();
+	if ( args != "" ) {
+		console->AddError( "reloadScene :: this command does not take arguments!!!" );
+		console->AddInfo( "Scene reload failed." );
+		return;
+	}
+
+	Scene * scene = Scene::getInstance();
+	Fn_LoadScene( scene->GetName() );
 }
 
 /*
@@ -622,6 +855,24 @@ void CommandSys::BuildCommands() {
 	brdfIntegrationLUTCommand->description = Str( "Pre-compute the BRDF as a LUT." );
 	brdfIntegrationLUTCommand->fn = Fn_BRDFIntegrationLUT;
 	m_commands.push_back( brdfIntegrationLUTCommand );
+
+	Cmd * fpsCommand = new Cmd;
+	fpsCommand->name = Str( "showFPS" );
+	fpsCommand->description = Str( "Toggle FramesPerSecond counter." );
+	fpsCommand->fn = Fn_FPS;
+	m_commands.push_back( fpsCommand );
+
+	Cmd * loadSceneCommand = new Cmd;
+	loadSceneCommand->name = Str( "loadScene" );
+	loadSceneCommand->description = Str( "Load scene file at user-defined location." );
+	loadSceneCommand->fn = Fn_LoadScene;
+	m_commands.push_back( loadSceneCommand );
+
+	Cmd * reloadSceneCommand = new Cmd;
+	reloadSceneCommand->name = Str( "reloadScene" );
+	reloadSceneCommand->description = Str( "Reload current scene." );
+	reloadSceneCommand->fn = Fn_ReloadScene;
+	m_commands.push_back( reloadSceneCommand );
 }
 
 /*

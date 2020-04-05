@@ -92,7 +92,7 @@ class Light {
 		static Shader * s_depthShader;
 
 		static void InitShadowAtlas();
-		static Framebuffer s_depthBufferAtlas;
+		static Framebuffer * s_depthBufferAtlas;
 		static unsigned int s_partitionSize;
 		static const unsigned int s_depthBufferAtlasSize_min = 512;
 		static const unsigned int s_depthBufferAtlasSize_max = 4096;
@@ -111,9 +111,11 @@ class Light {
 		void InitBoundsVolume();
 
 	private:		
-		virtual Mesh * GetDebugMesh() const { return &s_debugModel; }
-		static Mesh s_debugModel;
+		virtual Mesh * GetDebugMesh() const { return s_debugModel; }
+		static Mesh * s_debugModel;
 		unsigned int m_debugModel_VAO;
+
+	friend Scene;
 };
 
 
@@ -135,9 +137,11 @@ class DirectionalLight : public Light {
 		const float * LightMatrix();
 
 	private:
-		Mesh * GetDebugMesh() const { return &s_debugModel_directional; }
+		Mesh * GetDebugMesh() const { return s_debugModel_directional; }
 
-		static Mesh s_debugModel_directional;
+		static Mesh * s_debugModel_directional;
+
+	friend Scene;
 };
 
 /*
@@ -159,9 +163,11 @@ class SpotLight : public Light {
 		void SetAngle( float radians ) { m_uniformBlock.angle = cos( radians / 2.0f ); }
 
 	private:
-		Mesh * GetDebugMesh() const { return &s_debugModel_spot; }
+		Mesh * GetDebugMesh() const { return s_debugModel_spot; }
 
-		static Mesh s_debugModel_spot;
+		static Mesh * s_debugModel_spot;
+
+	friend Scene;
 };
 
 /*
@@ -186,10 +192,12 @@ class PointLight : public Light {
 		void PassUniforms( Shader* shader, int idx ) const;
 
 	private:
-		Mesh * GetDebugMesh() const { return &s_debugModel_point; }
+		Mesh * GetDebugMesh() const { return s_debugModel_point; }
 		Mat4 m_xfrms[6];
 
-		static Mesh s_debugModel_point;
+		static Mesh * s_debugModel_point;
+
+	friend Scene;
 };
 
 /*
@@ -204,6 +212,7 @@ class EnvProbe {
 		EnvProbe();
 		EnvProbe( Vec3 pos );
 		~EnvProbe() {};
+		void Delete();
 
 		const Vec3 GetPosition() { return m_position; }
 		void SetPosition( Vec3 pos ) { m_position = pos; }
@@ -215,7 +224,7 @@ class EnvProbe {
 
 		bool BuildProbe( unsigned int probeIdx );
 		void PassUniforms( Shader* shader, unsigned int slot ) const;
-		std::vector<unsigned int> RenderCubemaps( const unsigned int cubemapSize );
+		std::vector<unsigned int> RenderCubemaps( Shader * shader, const unsigned int cubemapSize );
 
 	private:
 		Vec3 m_position;
@@ -227,6 +236,8 @@ class EnvProbe {
 		Mesh * m_meshes [256];
 
 		static Texture s_brdfIntegrationMap;
+
+	friend Scene;
 };
 
 #endif

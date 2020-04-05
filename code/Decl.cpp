@@ -75,6 +75,44 @@ bool MaterialDecl::LoadPathsFromFile( const char * decl_relative, std::string & 
 
 /*
 ====================================
+Decl::DeleteAllDecls
+====================================
+*/
+void MaterialDecl::DeleteAllDecls() {
+	//ERRORR!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	return;
+
+    resourceMap_t::iterator it = s_matDecls.begin();
+    while ( it != s_matDecls.end() ) {
+		MaterialDecl * currentMatDecl = it->second;
+		currentMatDecl->Delete();
+        delete currentMatDecl;
+		currentMatDecl = nullptr;
+		it++;
+    }
+}
+
+/*
+====================================
+MaterialDecl::Delete
+	-deletes Texture member objects
+====================================
+*/
+void MaterialDecl::Delete() {
+	textureMap::iterator it = m_textures.begin();
+	while ( it != m_textures.end() ) {
+		Texture * currentTexture = it->second;
+		currentTexture->Delete();
+		delete it->second;
+		it->second = nullptr;
+		it++;
+	}
+}
+
+
+
+/*
+====================================
 MaterialDecl::GetMaterialDecl
 ====================================
 */
@@ -134,24 +172,17 @@ MaterialDecl * MaterialDecl::LoadMaterialDecl( const char * name ) {
 		if ( textureIndex < 0 ) {
 			//texture doesnt exist. Load it and add it to static texture list.
 			if ( textureEntry->type == "texture2d" ) {
-				if ( newTexture->InitFromFile( textureEntry->path.c_str() ) ) {
-					newTexture->s_textures.push_back( newTexture );
-					textures[uniformName] = newTexture; //add texture to resource
-				} else {
-					delete newTexture;
-					return NULL;
-				}
+				newTexture->InitFromFile( textureEntry->path.c_str() );
+				newTexture->s_textures.push_back( newTexture );
+				textures[uniformName] = newTexture; //add texture to resource
 			} else if ( textureEntry->type == "cubemap" ) {
 				delete newTexture; //since we need a cubemap, delete newTexture and recreate it as a cubemap obj
+				newTexture = nullptr;
 				CubemapTexture * newCubemapTexture = new CubemapTexture;
 
-				if ( newCubemapTexture->InitFromFile( textureEntry->path.c_str() ) ) {
-					newCubemapTexture->s_textures.push_back( newCubemapTexture );
-					textures[uniformName] = newCubemapTexture; //add texture to resource
-				} else {
-					delete newCubemapTexture;
-					return NULL;
-				}
+				newCubemapTexture->InitFromFile( textureEntry->path.c_str() );
+				newCubemapTexture->s_textures.push_back( newCubemapTexture );
+				textures[uniformName] = newCubemapTexture; //add texture to resource
 			}
 
 		} else {
@@ -197,8 +228,11 @@ void MaterialDecl::BindTextures() {
 	while ( it != m_textures.end() ) {
 		std::string uniformName = it->first;
 		Texture* texture = it->second;
-		shader->SetAndBindUniformTexture( uniformName.c_str(), slotCount, texture->GetTarget(), texture->GetName() );
-
+		if ( texture->GetName() == 2 ) {
+			shader->SetAndBindUniformTexture( uniformName.c_str(), slotCount, GL_TEXTURE_CUBE_MAP, texture->GetName() );
+		} else {
+			shader->SetAndBindUniformTexture( uniformName.c_str(), slotCount, texture->GetTarget(), texture->GetName() );
+		}
 		slotCount++;
 		it++;
 	}

@@ -165,7 +165,7 @@ void main () {
 	//light binning
 	mat4 MVP = projection * view;
 
-	vec3 clipPlanePos = camPos + ( camLook * 0.000001 ); //hardcode a tiny number instead of using near-plane
+	vec3 clipPlanePos = camPos + ( camLook * 0.0001 ); //hardcode a tiny number instead of using near-plane
 
 	float hfov_half = atan( 1.0 / projection[0][0] );
 	float vfov_half = atan( 1.0 / projection[1][1] );

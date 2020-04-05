@@ -381,6 +381,14 @@ void Mat3::operator/=( float scalar ) {
 	m_col3 /= scalar;
 }
 
+const bool Mat3::isRotationMatrix() const {
+	const float det = determinant();
+	if ( 1.0f - det < EPSILON && det >= 0.0f ) {
+		return true;
+	}
+	return false;
+}
+
 void Mat3::transposed() {
 	float temp;
 

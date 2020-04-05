@@ -26,7 +26,7 @@ struct vert_t {
 };
 
 struct surface {
-	unsigned int VAO;
+	unsigned int VAO, VAO_flipped;
 	Str materialName;
 	std::vector< vert_t > verts;
 	unsigned int vCount;
@@ -53,6 +53,7 @@ class Transform {
 		void SetRotation( Mat3 rot ) { m_rotation = rot; }
 		void SetScale( Vec3 scl ) { m_scale = scl; }
 		bool WorldXfrm( Mat4* model );
+		bool IsFlipped();
 
 	private:
 		Vec3 m_position;
@@ -68,8 +69,10 @@ Mesh
 */
 class Mesh {
 	public:
-		Mesh() { m_probe = NULL; };
+		Mesh() { m_probe = NULL; m_firstFlippedTransformIdx = 0; };
 		~Mesh() {};
+		void Delete();
+
 		bool LoadMSHFromFile( const char * msh_relative );
 		bool LoadOBJFromFile( const char * obj_relative );
 		void DrawSurface( unsigned int surfaceIdx );
@@ -86,6 +89,7 @@ class Mesh {
 		std::vector< surface* > m_surfaces; //geometry data for mesh.
 		std::vector< Str > m_materials; //list of materials used in mesh
 		std::vector< Transform * > m_transforms; //each entry is an instance of this mesh with unique transforms
+		unsigned int m_firstFlippedTransformIdx;
 
 	private:
 		void AddSurface();
@@ -109,8 +113,9 @@ class Cube {
 		Cube() {};
 		Cube( Str matName );
 		~Cube() {}; //SHOULD BE DELETING M_SURFACE... RIGHT?
+		void Delete();
 		bool LoadDecl();
-		void DrawSurface( bool flip );
+		void DrawSurface( bool flip ) const;
 		surface * m_surface;
 
 	private:
