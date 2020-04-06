@@ -1,0 +1,14 @@
+pointlight {
+	col 1.0 1.0 1.0
+	siz 1.0
+	pos 0.0 0.0 0.0
+	sha 0
+	mxr 10.0
+	brt 1.0
+}
+envProbe {
+	pos 0.0 0.0 0.0
+}
+skybox {
+	material/sky/black
+}

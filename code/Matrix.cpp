@@ -532,6 +532,32 @@ void Mat4::LookAt( const Vec3 eye, const Vec3 center, const Vec3 up ) {
 	m_col4[3] = 1.0f;
 }
 
+void Mat4::LookAt2( const Vec3 look, const Vec3 up, const Vec3 pos ) {	
+	Vec3 r = look.cross( up ).normal();
+	Vec3 d = look.normal();
+	Vec3 u = up.normal();
+
+	m_col1[0] = r[0];
+	m_col2[0] = r[1];
+	m_col3[0] = r[2];
+	m_col4[0] = -r.dot( pos );
+
+	m_col1[1] = u[0];
+	m_col2[1] = u[1];
+	m_col3[1] = u[2];
+	m_col4[1] = -u.dot( pos );
+
+	m_col1[2] = -d[0];
+	m_col2[2] = -d[1];
+	m_col3[2] = -d[2];
+	m_col4[2] = d.dot( pos );
+
+	m_col1[3] = 0.0f;
+	m_col2[3] = 0.0f;
+	m_col3[3] = 0.0f;
+	m_col4[3] = 1.0f;
+}
+
 void Mat4::Perspective( const float verticalFOV, const float aspect, const float near, const float far ) {
 	const float top = tan( verticalFOV / 2.0f ) * near;
 	const float right = top * aspect;

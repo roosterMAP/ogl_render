@@ -19,17 +19,16 @@ layout ( std430 ) buffer light_LUT {
 	LightIDs lightLists[];
 };
 
-struct Position {
-	float x, y, z;
-};
+
 struct Tri {
 	uint vIdxs[3];
 };
+
 struct LightEffect {
 	uint vCount;
 	uint tCount;
-	Position vPos[8];
-	Tri tris[12];
+	float vPos[ 8 * 3 ];
+	uint tris[ 12 * 3 ];
 };
 layout( std430 ) buffer lightEffect_buffer {
 	LightEffect lights[];
@@ -85,15 +84,14 @@ float distanceToPlane( vec3 v, vec3 N, vec3 P ) {
 //test if point P is within volume
 bool WithinVolume( LightEffect volume, vec3 P ) {
 	for ( uint i = 0; i < volume.tCount; i++ ) {
-		Tri testTri = volume.tris[i];
+		Tri testTri;
+		testTri.vIdxs[0] = volume.tris[ i * 3 + 0];
+		testTri.vIdxs[1] = volume.tris[ i * 3 + 1];
+		testTri.vIdxs[2] = volume.tris[ i * 3 + 2];
 
-		Position p0 = volume.vPos[ testTri.vIdxs[0] ];
-		Position p1 = volume.vPos[ testTri.vIdxs[1] ];
-		Position p2 = volume.vPos[ testTri.vIdxs[2] ];
-
-		vec3 p0_v3 = vec3( p0.x, p0.y, p0.z );
-		vec3 p1_v3 = vec3( p1.x, p1.y, p1.z );
-		vec3 p2_v3 = vec3( p2.x, p2.y, p2.z );
+		vec3 p0_v3 = vec3( volume.vPos[ testTri.vIdxs[0] * 3 ], volume.vPos[ testTri.vIdxs[0] * 3 + 1 ], volume.vPos[ testTri.vIdxs[0] * 3 + 2 ] );
+		vec3 p1_v3 = vec3( volume.vPos[ testTri.vIdxs[1] * 3 ], volume.vPos[ testTri.vIdxs[1] * 3 + 1 ], volume.vPos[ testTri.vIdxs[1] * 3 + 2 ] );
+		vec3 p2_v3 = vec3( volume.vPos[ testTri.vIdxs[2] * 3 ], volume.vPos[ testTri.vIdxs[2] * 3 + 1 ], volume.vPos[ testTri.vIdxs[2] * 3 + 2 ] );
 
 		vec3 p0p1 = p1_v3 - p0_v3;
 		vec3 p0p2 = p2_v3 - p0_v3;
@@ -184,15 +182,14 @@ void main () {
 		float light_maxDepth = -100.0;
 
 		for ( uint j = 0; j < currentLightEffect.tCount; j++ ) {
-			Tri currentTri = currentLightEffect.tris[j];
+			Tri currentTri; 
+			currentTri.vIdxs[0] = currentLightEffect.tris[ j * 3 + 0 ];
+			currentTri.vIdxs[1] = currentLightEffect.tris[ j * 3 + 1 ];
+			currentTri.vIdxs[2] = currentLightEffect.tris[ j * 3 + 2 ];
 
-			Position p0_pos = currentLightEffect.vPos[ currentTri.vIdxs[0] ];
-			Position p1_pos = currentLightEffect.vPos[ currentTri.vIdxs[1] ];
-			Position p2_pos = currentLightEffect.vPos[ currentTri.vIdxs[2] ];
-
-			vec3 p0 = vec3( p0_pos.x, p0_pos.y, p0_pos.z );
-			vec3 p1 = vec3( p1_pos.x, p1_pos.y, p1_pos.z );
-			vec3 p2 = vec3( p2_pos.x, p2_pos.y, p2_pos.z );
+			vec3 p0 = vec3( currentLightEffect.vPos[ currentTri.vIdxs[0] * 3 + 0 ], currentLightEffect.vPos[ currentTri.vIdxs[0] * 3 + 1 ], currentLightEffect.vPos[ currentTri.vIdxs[0] * 3 + 2 ] );
+			vec3 p1 = vec3( currentLightEffect.vPos[ currentTri.vIdxs[1] * 3 + 0 ], currentLightEffect.vPos[ currentTri.vIdxs[1] * 3 + 1 ], currentLightEffect.vPos[ currentTri.vIdxs[1] * 3 + 2 ] );
+			vec3 p2 = vec3( currentLightEffect.vPos[ currentTri.vIdxs[2] * 3 + 0 ], currentLightEffect.vPos[ currentTri.vIdxs[2] * 3 + 1 ], currentLightEffect.vPos[ currentTri.vIdxs[2] * 3 + 2 ] );
 
 			vec3 center = ( p0 + p1 + p2 ) / 3.0;
 			vec3 p0p1 = p1 - p0;

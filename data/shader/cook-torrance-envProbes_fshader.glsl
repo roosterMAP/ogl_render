@@ -10,16 +10,12 @@ uniform sampler2D glossTexture;
 const float E = 2.71828182846;
 const float PI = 3.14159265359;
 uniform sampler2DShadow shadowAtlas;
-const int MAX_LIGHTS = 16;
 
-struct Position {
-	float x, y, z;
-};
 struct Light {
 	int typeIndex;
-	Position pos;
-	Position col;
-	Position dir;
+	float pos_x, pos_y, pos_z;
+	float col_r, col_g, col_b;
+	float dir_x, dir_y, dir_z;
 	float angle; //splot light only
 	float radius;
 	float max_radius;
@@ -32,10 +28,15 @@ layout ( std430 ) buffer light_buffer {
 };
 
 struct Shadow {
-	mat4 matrix;
-	vec2 loc;
+	vec4 m_row1;
+	vec4 m_row2;
+	vec4 m_row3;
+	vec4 m_row4;
+	vec4 loc;
 };
-uniform Shadow shadows[MAX_LIGHTS];
+layout ( std430 ) buffer shadow_buffer {
+	Shadow shadow_data[];
+};
 
 //scene uniforms
 uniform int shadowMapPartitionSize;
@@ -108,16 +109,22 @@ float ShadowCalculation( float bias, Light light ) {
 
 	int faceIdx = 0;
 	if ( light.typeIndex == 3 ) {
-		vec3 lightPos = vec3( light.pos.x, light.pos.y, light.pos.z );
+		vec3 lightPos = vec3( light.pos_x, light.pos_y, light.pos_z );
 		faceIdx = GetFaceIdx( normalize( FragPos - lightPos ) ); //get which face to sample shadows from
 	}
 
-	vec4 FragPosLightSpace = shadows[shadowIdx + faceIdx].matrix * vec4( FragPos, 1.0 );	
+	mat4 shadowMatrix;
+	shadowMatrix[0] = shadow_data[shadowIdx + faceIdx].m_row1;
+	shadowMatrix[1] = shadow_data[shadowIdx + faceIdx].m_row2;
+	shadowMatrix[2] = shadow_data[shadowIdx + faceIdx].m_row3;
+	shadowMatrix[3] = shadow_data[shadowIdx + faceIdx].m_row4;
+
+	vec4 FragPosLightSpace = shadowMatrix * vec4( FragPos, 1.0 );	
 	vec3 projCoords = FragPosLightSpace.xyz / FragPosLightSpace.w; //perform perspective divide
 	projCoords = projCoords * 0.5 + 0.5; //transform to [0,1] range	
 	float tileSize_normalized = float( shadowMapPartitionSize ) / atlasSize.x;
-	projCoords.x = projCoords.x * tileSize_normalized + shadows[shadowIdx + faceIdx].loc.x;
-	projCoords.y = projCoords.y * tileSize_normalized + shadows[shadowIdx + faceIdx].loc.y;
+	projCoords.x = projCoords.x * tileSize_normalized + shadow_data[shadowIdx + faceIdx].loc.x;
+	projCoords.y = projCoords.y * tileSize_normalized + shadow_data[shadowIdx + faceIdx].loc.y;
 
 	vec3 samplePos;
 	int sampleCount = 0;
@@ -186,9 +193,9 @@ void main() {
 	vec3 totalRadiance = vec3( 0.0, 0.0, 0.0 );
 	for( int n = 0; n < lightCount; n++ ) {
 		Light currentLight = light_data[n];
-		vec3 lightPos = vec3( currentLight.pos.x, currentLight.pos.y, currentLight.pos.z );
-		vec3 lightCol = vec3( currentLight.col.x, currentLight.col.y, currentLight.col.z );
-		vec3 lightDir = vec3( currentLight.dir.x, currentLight.dir.y, currentLight.dir.z );
+		vec3 lightPos = vec3( currentLight.pos_x, currentLight.pos_y, currentLight.pos_z );
+		vec3 lightCol = vec3( currentLight.col_r, currentLight.col_g, currentLight.col_b );
+		vec3 lightDir = vec3( currentLight.dir_x, currentLight.dir_y, currentLight.dir_z );
 
 		float attenuation = 1.0;
 		attenuation = LightAttenuation( FragPos, lightPos, currentLight.radius, currentLight.max_radius, currentLight.brightness, 0.001 );

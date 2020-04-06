@@ -336,6 +336,7 @@ void Scene::Unload() {
 	m_lightCount = 0;
 	Light::s_shadowCastingLightCount = 0;
 	Light::s_lightCount = 0;
+	Light::s_depthBufferAtlas->Delete();
 
 	//unload env probe resources
 	for ( unsigned int i = 0; i < m_envProbeCount; i++ ) {

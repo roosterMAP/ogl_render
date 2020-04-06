@@ -120,6 +120,7 @@ class Mat4 {
 		Mat4( const float * data );
 
 		void LookAt( const Vec3 eye, const Vec3 center, const Vec3 up );
+		void LookAt2( const Vec3 eye, const Vec3 center, const Vec3 up );
 		void Perspective( const float verticalFOV, const float aspect, const float near, const float far );
 		void Orthographic( const float left, const float right, const float bottom, const float top );
 		void Orthographic( const float left, const float right, const float bottom, const float top, const float near, const float far );

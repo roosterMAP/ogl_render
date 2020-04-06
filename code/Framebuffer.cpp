@@ -53,13 +53,16 @@ Framebuffer::Delete
 */
 void Framebuffer::Delete() {
 	for ( unsigned int i = 0; i < m_attachements.size(); i++ ) {
-		glDeleteTextures( 1, &m_attachements[0] );
+		glDeleteTextures( 1, &m_attachements[i] );		
 	}
+	m_attachements.clear();
 	if ( m_id > 0 ) {
 		glDeleteFramebuffers( 1, &m_id );
+		m_id = 0;
 	}
 	if ( m_screenVAO > 0 ) {
 		glDeleteVertexArrays( 1, &m_screenVAO );
+		m_screenVAO = 0;
 	}
 }
 

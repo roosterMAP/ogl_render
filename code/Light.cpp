@@ -335,35 +335,62 @@ Light::PassUniforms
 ================================
 */
 void Light::PassUniforms( Shader * shader, int idx ) const {
-	const GLsizeiptr size = sizeof( LightStorage );
-
 	//fetch the buffer object from the shader. If its not present, the create and add it.
-	const int block_index = shader->BufferBlockIndexByName( "light_buffer" );
-	Buffer * ssbo = NULL;
-	if ( block_index == GL_INVALID_INDEX ) {
-		//create it if it doesnt exist
-		const GLsizeiptr totalSize = s_lightCount * size;
-		ssbo = ssbo->GetBuffer( "light_buffer" );
-		ssbo->Initialize( totalSize, NULL, GL_DYNAMIC_READ );
-		shader->AddBuffer( ssbo );
-	} else {
-		ssbo = shader->BufferByBlockIndex( block_index );
-	}
+	{
+		const GLsizeiptr size = sizeof( LightStorage );
+		const int block_index = shader->BufferBlockIndexByName( "light_buffer" );
+		Buffer * ssbo = NULL;
+		if ( block_index == GL_INVALID_INDEX ) {
+			//create it if it doesnt exist
+			const GLsizeiptr totalSize = s_lightCount * size;
+			ssbo = ssbo->GetBuffer( "light_buffer" );
+			ssbo->Initialize( totalSize, NULL, GL_DYNAMIC_READ );
+			shader->AddBuffer( ssbo );
+		} else {
+			ssbo = shader->BufferByBlockIndex( block_index );
+		}
 
-	//copy uniform data into this lights region of the buffer
-	const GLintptr offset = idx * size;	
-	glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
-	glBindBufferBase( GL_SHADER_STORAGE_BUFFER, ssbo->GetBindingPoint(), ssbo->GetID() );
-	glBufferSubData( GL_SHADER_STORAGE_BUFFER, offset, size, &m_uniformBlock );
-	glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
+		//copy uniform data into this lights region of the buffer
+		const GLintptr offset = idx * size;	
+		glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
+		glBindBufferBase( GL_SHADER_STORAGE_BUFFER, ssbo->GetBindingPoint(), ssbo->GetID() );
+		glBufferSubData( GL_SHADER_STORAGE_BUFFER, offset, size, &m_uniformBlock );
+		glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
+	}
 
 	//if shadowcasting copy shadow data
 	if ( m_uniformBlock.shadowIdx > -1 ) {
-		char str2[16];
-		sprintf( str2, "shadows[%d].", m_uniformBlock.shadowIdx );
-		Str shadowStructPrefix = Str( str2 );
-		shader->SetUniformMatrix4f( ( shadowStructPrefix + Str( "matrix" ) ).c_str(), 1, false, m_xfrm.as_ptr() );
-		shader->SetUniform2f( ( shadowStructPrefix + Str( "loc" ) ).c_str(), 1, m_PosInShadowAtlas.as_ptr() );
+		ShadowStorage shadowUniformBlock;
+		shadowUniformBlock.xfrm = m_xfrm;
+		shadowUniformBlock.loc = m_PosInShadowAtlas.as_Vec4();
+
+		const GLsizeiptr size = sizeof( ShadowStorage );
+		const int block_index = shader->BufferBlockIndexByName( "shadow_buffer" );
+		Buffer * ssbo = NULL;
+		if ( block_index == GL_INVALID_INDEX ) {
+			//create it if it doesnt exist
+			const GLsizeiptr totalSize = s_shadowCastingLightCount * size;
+			ssbo = ssbo->GetBuffer( "shadow_buffer" );
+			ssbo->Initialize( totalSize, NULL, GL_DYNAMIC_READ );
+			shader->AddBuffer( ssbo );
+		} else {
+			ssbo = shader->BufferByBlockIndex( block_index );
+		}
+		const GLintptr offset = m_uniformBlock.shadowIdx * size;
+		glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
+		glBindBufferBase( GL_SHADER_STORAGE_BUFFER, ssbo->GetBindingPoint(), ssbo->GetID() );
+		glBufferSubData( GL_SHADER_STORAGE_BUFFER, offset, size, &shadowUniformBlock );
+		glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
+
+		//read the ssbo that was just sent to GPU
+		/*
+		ShadowStorage shader_data;
+		glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
+		GLvoid* p = glMapBufferRange( GL_SHADER_STORAGE_BUFFER, offset, size, GL_MAP_READ_BIT );
+		memcpy( &shader_data, p, size );
+		glUnmapBuffer( GL_SHADER_STORAGE_BUFFER );
+		glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
+		*/
 	}
 }
 
@@ -741,39 +768,62 @@ PointLight::PassUniforms
 ================================
 */
 void PointLight::PassUniforms( Shader * shader, int idx ) const {
-	const GLsizeiptr size = sizeof( LightStorage );
-
-	//const GLsizeiptr size = sizeof( int ) + sizeof( float ) * 4 + sizeof( float ) * 4 + sizeof( float ) * 4 + sizeof( float ) + sizeof( float ) + sizeof( int );
-
 	//fetch the buffer object from the shader. If its not present, the create and add it.
-	const int block_index = shader->BufferBlockIndexByName( "light_buffer" );
-	Buffer * ssbo = NULL;
-	if ( block_index == GL_INVALID_INDEX ) {
-		//create it if it doesnt exist
-		const GLsizeiptr totalSize = s_lightCount * size;
-		ssbo = ssbo->GetBuffer( "light_buffer" );
-		ssbo->Initialize( totalSize, NULL, GL_DYNAMIC_READ );
-		shader->AddBuffer( ssbo );
-	} else {
-		ssbo = shader->BufferByBlockIndex( block_index );
+	{
+		const GLsizeiptr size = sizeof( LightStorage );
+		const int block_index = shader->BufferBlockIndexByName( "light_buffer" );
+		Buffer * ssbo = NULL;
+		if ( block_index == GL_INVALID_INDEX ) {
+			//create it if it doesnt exist
+			const GLsizeiptr totalSize = s_lightCount * size;
+			ssbo = ssbo->GetBuffer( "light_buffer" );
+			ssbo->Initialize( totalSize, NULL, GL_DYNAMIC_READ );
+			shader->AddBuffer( ssbo );
+		} else {
+			ssbo = shader->BufferByBlockIndex( block_index );
+		}
+		const GLintptr offset = idx * size;	
+		glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
+		glBindBufferBase( GL_SHADER_STORAGE_BUFFER, ssbo->GetBindingPoint(), ssbo->GetID() );
+		glBufferSubData( GL_SHADER_STORAGE_BUFFER, offset, size, &m_uniformBlock );
+		glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
 	}
-
-	const GLintptr offset = idx * size;	
-	glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
-	glBindBufferBase( GL_SHADER_STORAGE_BUFFER, ssbo->GetBindingPoint(), ssbo->GetID() );
-	glBufferSubData( GL_SHADER_STORAGE_BUFFER, offset, size, &m_uniformBlock );
-	glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
 
 	//if shadowcasting send shadow data
 	if ( m_uniformBlock.shadowIdx > -1 ) {
+		ShadowStorage shadowUniformBlock[6];
 		for ( unsigned int i = 0; i < 6; i++ ) {
-			char str2[16];
-			sprintf( str2, "shadows[%d].", m_uniformBlock.shadowIdx + i );
-			Str shadowStructPrefix = Str( str2 );
-			shader->SetUniformMatrix4f( ( shadowStructPrefix + Str( "matrix" ) ).c_str(), 1, false, m_xfrms[i].as_ptr() );
-			const Vec2 loc = GetShadowMapLoc( i );
-			shader->SetUniform2f( ( shadowStructPrefix + Str( "loc" ) ).c_str(), 1, loc.as_ptr() );
+			shadowUniformBlock[i].xfrm = m_xfrms[i];
+			shadowUniformBlock[i].loc = GetShadowMapLoc( i ).as_Vec4();
 		}
+
+		const GLsizeiptr size = sizeof( ShadowStorage );
+		const int block_index = shader->BufferBlockIndexByName( "shadow_buffer" );
+		Buffer * ssbo = NULL;
+		if ( block_index == GL_INVALID_INDEX ) {
+			//create it if it doesnt exist
+			const GLsizeiptr totalSize = s_shadowCastingLightCount * size;
+			ssbo = ssbo->GetBuffer( "shadow_buffer" );
+			ssbo->Initialize( totalSize, NULL, GL_DYNAMIC_READ );
+			shader->AddBuffer( ssbo );
+		} else {
+			ssbo = shader->BufferByBlockIndex( block_index );
+		}
+		const GLintptr offset = m_uniformBlock.shadowIdx * size;
+		glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
+		glBindBufferBase( GL_SHADER_STORAGE_BUFFER, ssbo->GetBindingPoint(), ssbo->GetID() );
+		glBufferSubData( GL_SHADER_STORAGE_BUFFER, offset, size * 6, &shadowUniformBlock );
+		glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
+
+		/*
+		//read the ssbo that was just sent to GPU
+		ShadowStorage shader_data[6];
+		glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
+		GLvoid* p = glMapBufferRange( GL_SHADER_STORAGE_BUFFER, offset, size * 6, GL_MAP_READ_BIT );
+		memcpy( shader_data, p, size * 6 );
+		glUnmapBuffer( GL_SHADER_STORAGE_BUFFER );
+		glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
+		*/
 	}
 }
 
@@ -930,12 +980,12 @@ std::vector< unsigned int > EnvProbe::RenderCubemaps( Shader * shader, const uns
 	Mat4 projection = Mat4();
 	projection.Perspective( to_radians( 90.0f ), 1.0f, 0.01f, 100.0f );
 	Mat4 views[] = { Mat4(), Mat4(), Mat4(), Mat4(), Mat4(), Mat4() };
-	views[0].LookAt( m_position, Vec3( 1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
-	views[1].LookAt( m_position, Vec3( -1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
-	views[2].LookAt( m_position, Vec3( 0.0f, 1.0f, 0.0f ), Vec3( 0.0f, 0.0f, 1.0f ) );
-	views[3].LookAt( m_position, Vec3( 0.0f, -1.0f, 0.0f ), Vec3( 0.0f, 0.0f, -1.0f ) );
-	views[4].LookAt( m_position, Vec3( 0.0f, 0.0f, 1.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
-	views[5].LookAt( m_position, Vec3( 0.0f, 0.0f, -1.0f ), Vec3( 0.0f, -1.0f, 0.0f ) );
+	views[0].LookAt2( Vec3( 1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ), m_position );
+	views[1].LookAt2( Vec3( -1.0f, 0.0f, 0.0f ), Vec3( 0.0f, -1.0f, 0.0f ), m_position );
+	views[2].LookAt2( Vec3( 0.0f, 1.0f, 0.0f ), Vec3( 0.0f, 0.0f, 1.0f ), m_position );
+	views[3].LookAt2( Vec3( 0.0f, -1.0f, 0.0f ), Vec3( 0.0f, 0.0f, -1.0f ), m_position );
+	views[4].LookAt2( Vec3( 0.0f, 0.0f, 1.0f ), Vec3( 0.0f, -1.0f, 0.0f ), m_position );
+	views[5].LookAt2( Vec3( 0.0f, 0.0f, -1.0f ), Vec3( 0.0f, -1.0f, 0.0f ), m_position );
 
 	//draw skybox
 	glDisable( GL_BLEND );
@@ -956,13 +1006,6 @@ std::vector< unsigned int > EnvProbe::RenderCubemaps( Shader * shader, const uns
 
 	//render the scene
 	Light * light = NULL;
-	for ( unsigned int i = 0; i < scene->LightCount(); i++ ) {
-		scene->LightByIndex( i, &light );
-		if ( light->GetShadow() ) {
-			light->UpdateDepthBuffer( scene );
-		}
-	}
-
 	for ( int faceIdx = 0; faceIdx < 6; faceIdx++ ) {
 		fbos[faceIdx].Bind(); //bind the framebuffer so all subsequent drawing is to it.
 		glClear( GL_DEPTH_BUFFER_BIT ); //clear only depth because we wanna keep skybox color

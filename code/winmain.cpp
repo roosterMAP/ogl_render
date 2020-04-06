@@ -327,7 +327,7 @@ void RenderScene( const float * view, const float * projection ) {
 					light->PassDepthAttribute( matDecl->shader, 4 );
 					const int shadowMapPartitionSize = ( unsigned int )( light->s_partitionSize );
 					matDecl->shader->SetUniform1i( "shadowMapPartitionSize", 1, &shadowMapPartitionSize );
-				}					
+				}				
 				light->PassUniforms( matDecl->shader, k );
 			}
 

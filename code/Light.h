@@ -32,6 +32,11 @@ struct LightStorage {
 	int shadowIdx;
 };
 
+struct ShadowStorage {
+	Mat4 xfrm;
+	Vec4 loc;
+};
+
 /*
 ==============================
 Light

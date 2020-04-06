@@ -1,0 +1,2 @@
+shaderProg :: skybox
+cubemap cubemap data/texture/system/black_cube.tga
