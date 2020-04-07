@@ -14,17 +14,15 @@ layout ( std430 ) buffer light_LUT {
 	LightIDs lightLists[];
 };
 
-struct Position {
-	float x, y, z;
-};
 struct Tri {
 	uint vIdxs[3];
 };
+
 struct LightEffect {
 	uint vCount;
 	uint tCount;
-	Position vPos[8];
-	Tri tris[12];
+	float vPos[ 8 * 3 ];
+	uint tris[ 12 * 3 ];
 };
 layout( std430 ) buffer lightEffect_buffer {
 	LightEffect lights[];
@@ -93,15 +91,14 @@ float getFragDepth( vec3 barycentric, vec3 vDepths ) {
 //test if point P is within volume
 bool WithinVolume( LightEffect volume, vec3 P ) {
 	for ( uint i = 0; i < volume.tCount; i++ ) {
-		Tri testTri = volume.tris[i];
+		Tri testTri;
+		testTri.vIdxs[0] = volume.tris[ i * 3 + 0];
+		testTri.vIdxs[1] = volume.tris[ i * 3 + 1];
+		testTri.vIdxs[2] = volume.tris[ i * 3 + 2];
 
-		Position p0 = volume.vPos[ testTri.vIdxs[0] ];
-		Position p1 = volume.vPos[ testTri.vIdxs[1] ];
-		Position p2 = volume.vPos[ testTri.vIdxs[2] ];
-
-		vec3 p0_v3 = vec3( p0.x, p0.y, p0.z );
-		vec3 p1_v3 = vec3( p1.x, p1.y, p1.z );
-		vec3 p2_v3 = vec3( p2.x, p2.y, p2.z );
+		vec3 p0_v3 = vec3( volume.vPos[ testTri.vIdxs[0] * 3 ], volume.vPos[ testTri.vIdxs[0] * 3 + 1 ], volume.vPos[ testTri.vIdxs[0] * 3 + 2 ] );
+		vec3 p1_v3 = vec3( volume.vPos[ testTri.vIdxs[1] * 3 ], volume.vPos[ testTri.vIdxs[1] * 3 + 1 ], volume.vPos[ testTri.vIdxs[1] * 3 + 2 ] );
+		vec3 p2_v3 = vec3( volume.vPos[ testTri.vIdxs[2] * 3 ], volume.vPos[ testTri.vIdxs[2] * 3 + 1 ], volume.vPos[ testTri.vIdxs[2] * 3 + 2 ] );
 
 		vec3 p0p1 = p1_v3 - p0_v3;
 		vec3 p0p2 = p2_v3 - p0_v3;
@@ -121,7 +118,7 @@ void main() {
 		normal = normalize( normal * 2.0 - 1.0 );
 		normal *= TBN;
 		FragColor = vec4( normal, 1.0 );
-	} else if ( mode == 6 ) {
+	} else if ( mode == 5 ) {
 		//render the light volume into the scene
 		bool binFrag = false;
 
@@ -139,27 +136,28 @@ void main() {
 		vec3 top_plane_normal = transpose( mat3( view ) ) * vec3( 0.0, cos( vfov_half ), sin( vfov_half ) );
 		vec3 bottom_plane_normal = transpose( mat3( view ) ) * vec3( 0.0, cos( vfov_half ) * -1.0, sin( vfov_half ) );
 
+		bool inside = true;
+
 		for ( uint i = 0; i < lightCount; i++ ) {
 			LightEffect currentLightEffect = lights[i];
 			
 			bool withinLightEffect = WithinVolume( currentLightEffect, camPos );
 
 			for ( uint j = 0; j < currentLightEffect.tCount; j++ ) {
-				Tri currentTri = currentLightEffect.tris[j];
+				Tri currentTri; 
+				currentTri.vIdxs[0] = currentLightEffect.tris[ j * 3 + 0 ];
+				currentTri.vIdxs[1] = currentLightEffect.tris[ j * 3 + 1 ];
+				currentTri.vIdxs[2] = currentLightEffect.tris[ j * 3 + 2 ];
 
-				Position p0_pos = currentLightEffect.vPos[ currentTri.vIdxs[0] ];
-				Position p1_pos = currentLightEffect.vPos[ currentTri.vIdxs[1] ];
-				Position p2_pos = currentLightEffect.vPos[ currentTri.vIdxs[2] ];
-
-				vec3 p0 = vec3( p0_pos.x, p0_pos.y, p0_pos.z );
-				vec3 p1 = vec3( p1_pos.x, p1_pos.y, p1_pos.z );
-				vec3 p2 = vec3( p2_pos.x, p2_pos.y, p2_pos.z );
+				vec3 p0 = vec3( currentLightEffect.vPos[ currentTri.vIdxs[0] * 3 + 0 ], currentLightEffect.vPos[ currentTri.vIdxs[0] * 3 + 1 ], currentLightEffect.vPos[ currentTri.vIdxs[0] * 3 + 2 ] );
+				vec3 p1 = vec3( currentLightEffect.vPos[ currentTri.vIdxs[1] * 3 + 0 ], currentLightEffect.vPos[ currentTri.vIdxs[1] * 3 + 1 ], currentLightEffect.vPos[ currentTri.vIdxs[1] * 3 + 2 ] );
+				vec3 p2 = vec3( currentLightEffect.vPos[ currentTri.vIdxs[2] * 3 + 0 ], currentLightEffect.vPos[ currentTri.vIdxs[2] * 3 + 1 ], currentLightEffect.vPos[ currentTri.vIdxs[2] * 3 + 2 ] );
 
 				vec3 center = ( p0 + p1 + p2 ) / 3.0;
 				vec3 p0p1 = p1 - p0;
 				vec3 p1p2 = p2 - p1;
 				vec3 p0p2 = p2 - p0;
-				float radius = max( max( length( p0p1 ), length( p1p2 ) ), length( p0p2 ) ) / 2.0; 
+				float radius = max( max( length( p0p1 ), length( p1p2 ) ), length( p0p2 ) ) / 2.0;
 
 				//test if the entire triangle is within the frustrum planes
 				float left_plane_dist = distanceToPlane( center, normalize( left_plane_normal ) * -1.0, camPos );
@@ -280,17 +278,29 @@ void main() {
 			}
 		}
 
+		vec4 color = vec4( 0.0, 1.0, 1.0, 1.0 );
+		if ( binFrag ) {
+			color = vec4( 1.0, 1.0, 0.0, 1.0 );
+		}
+		FragColor = color;
+
+	} else if ( mode == 6 ) {
+		vec4 color = vec4( 0.0, 0.0, 0.0, 1.0 );
+
 		//get the light count per tile
 		ivec2 tiledCoord = ivec2( gl_FragCoord.xy ) / WORK_GROUP_SIZE;
 		int workGroupID = tiledCoord.x + tiledCoord.y * screenWidth / WORK_GROUP_SIZE;
 		int numLights = int( lightLists[ workGroupID ].count );
 
-		vec4 color = vec4( 0.0, 0.0, 0.0, 1.0 );
-		if ( numLights > 0 ) {
-			color = vec4( 0.5, 0.5, 0.0, 1.0 );
-		}
-		if ( binFrag ) {
-			color = vec4( 1.0, 1.0, 0.0, 1.0 );
+		float maxLightPerTile = 9.0;
+		float step = 1.0 / ( maxLightPerTile / 3.0 );
+		float val = step * numLights;
+		if ( numLights <= maxLightPerTile / 3.0 ) { //blue channel
+			color.b = val;
+		} else if ( numLights <= maxLightPerTile / 3.0 * 2.0 ) { //green channel
+			color.g = val;
+		} else { //red channel
+			color.r = val;
 		}
 		FragColor = color;
 

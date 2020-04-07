@@ -123,7 +123,7 @@ void ForwardPlus_Prepass( const float * view, const float * projection ) {
 
 void RenderDebug( const float * view, const float * perspective, int mode ) {
 	//if we're debugging lightbinning, then rebuild depthPrepass
-	if ( mode == 6 ){
+	if ( mode == 5 || mode == 6 ){
 		ForwardPlus_Prepass( view, perspective );
 	}
 
@@ -401,7 +401,7 @@ void drawFrame( void ) {
 		debugRenderMode = atoi( g_cvar_debugLighting->GetArgs().c_str() );
 	}
 
-	if ( ( debugRenderMode > 0 && debugRenderMode <= 4 ) || debugRenderMode == 6 ) {		
+	if ( debugRenderMode > 0 && debugRenderMode <= 6 ) {		
 		RenderDebug( view.as_ptr(), projection.as_ptr(), debugRenderMode );
 	} else {
 		if ( edgeHighlights_renderMode == 0 ) { //regular
@@ -441,7 +441,7 @@ void drawFrame( void ) {
 	}
 
 	//if cvar debug render mode on, skip post process pass
-	if ( debugRenderMode > 0 && debugRenderMode <= 4 ) {
+	if ( debugRenderMode > 0 && debugRenderMode <= 6 ) {
 		//Draw mainFBO to the default buffer directly
 		glBindFramebuffer( GL_READ_FRAMEBUFFER, mainFBO.GetID() );
 		glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 );

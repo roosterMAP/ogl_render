@@ -485,7 +485,7 @@ void Light::InitLightEffectStorage() {
 	}
 
 	Vec3 axis = Vec3( 1.0, 0.0, 0.0 );
-	Vec3 crossVec = axis.cross( m_uniformBlock.direction );
+	Vec3 crossVec = m_uniformBlock.direction.cross( axis );
 	if( crossVec.length() <= EPSILON ) {
 		axis = Vec3( 1.0f, 1.0f, 0.0f );
 		axis.normalize();
@@ -493,10 +493,10 @@ void Light::InitLightEffectStorage() {
 		crossVec.normalize();
 	}
 	Mat4 rotation = Mat4();
-	if ( TypeIndex() != 3 ) { //point light
-		rotation[0] = Vec4( crossVec, 0.0 );
-		rotation[1] = Vec4( m_uniformBlock.direction, 0.0 );
-		rotation[2] = Vec4( m_uniformBlock.direction.cross( crossVec ).normal(), 0.0 );
+	if ( TypeIndex() != 3 ) { //if not a point light
+		rotation[0] = Vec4( m_uniformBlock.direction.cross( crossVec ).normal(), 0.0 );
+		rotation[1] = Vec4( m_uniformBlock.direction.normal(), 0.0 );
+		rotation[2] = Vec4( crossVec, 0.0 );
 		rotation[3] = Vec4( 0.0, 0.0, 0.0, 1.0 );
 	}
 		
