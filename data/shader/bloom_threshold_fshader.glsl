@@ -3,14 +3,18 @@ out vec4 FragColor;
 
 in vec2 TexCoords;
 
-uniform vec3 threshold;
+uniform float threshold;
 uniform sampler2D screenTexture;
 
 void main() {
 	vec3 col = texture( screenTexture, TexCoords ).rgb;
-	if( dot( col, threshold ) > 1.0 ) {
+	float mag = length( col );
+
+	if( mag >= threshold ) {
 		FragColor = vec4( col, 1.0 );
 	} else {
-		FragColor = vec4( 0.0, 0.0, 0.0, 1.0 );
+		//prevents hard cutoff at threshold.
+		float intensity = 1.0 - clamp( abs( threshold - mag ) / 0.1, 0.0, 1.0 );
+		FragColor = vec4( col * intensity, 1.0 );
 	}
 }

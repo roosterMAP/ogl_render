@@ -426,33 +426,33 @@ bool Texture::CompressFromFile( const char * relativePath ) {
 				data[ i * 4 + 0 ] = buffer_data[ i ];
 				data[ i * 4 + 1 ] = buffer_data[ i ];
 				data[ i * 4 + 2 ] = buffer_data[ i ];
-				data[ i * 4 + 3 ] = 255;
+				data[ i * 4 + 3 ] = 0;
 			}
 			input_tex.ptr = data;
 			chanCount = 4;
-			GetProfile_basic( &settings );
+			GetProfile_alpha_basic( &settings );
 		} else if ( chanCount == 2 ) {
 			data = new unsigned char[ width * height * 4 ];
 			for ( unsigned int i = 0; i < width * height; i++ ) {
-				data[ i * 4 + 0 ] = buffer_data[ i * 2 ];
-				data[ i * 4 + 1 ] = 0;
+				data[ i * 4 + 0 ] = buffer_data[ i * 2 + 0 ];
+				data[ i * 4 + 1 ] = buffer_data[ i * 2 + 1 ];
 				data[ i * 4 + 2 ] = 0;
-				data[ i * 4 + 3 ] = 255;
+				data[ i * 4 + 3 ] = 0;
 			}
 			input_tex.ptr = data;
 			chanCount = 4;
-			GetProfile_basic( &settings );
-		} else if ( chanCount == 3 ) {			
+			GetProfile_alpha_basic( &settings );
+		} else if ( chanCount == 3 ) {
 			data = new unsigned char[ width * height * 4 ];
 			for ( unsigned int i = 0; i < width * height; i++ ) {
 				data[ i * 4 + 0 ] = buffer_data[ i * 3 + 0 ];
 				data[ i * 4 + 1 ] = buffer_data[ i * 3 + 1 ];
 				data[ i * 4 + 2 ] = buffer_data[ i * 3 + 2 ];
-				data[ i * 4 + 3 ] = 255;
+				data[ i * 4 + 3 ] = 0;
 			}
 			input_tex.ptr = data;
 			chanCount = 4;
-			GetProfile_basic( &settings );
+			GetProfile_alpha_basic( &settings );
 		} else if ( chanCount == 4 ) {
 			GetProfile_alpha_basic( &settings );				
 		} else {

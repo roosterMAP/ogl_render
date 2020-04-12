@@ -18,6 +18,7 @@ CVar * g_cvar_showVertTransform = new CVar();
 CVar * g_cvar_showEdgeHighlights = new CVar();
 CVar * g_cvar_brdfIntegrateLUT = new CVar();
 CVar * g_cvar_fps = new CVar();
+CVar * g_cvar_showBloom = new CVar();
 
 CommandSys * g_cmdSys = CommandSys::getInstance(); //declare g_cmdSys singleton
 
@@ -52,12 +53,17 @@ Fn_DebugLighting
 ================================
 */
 void Fn_DebugLighting( Str args ) {
+	Console * console = Console::getInstance(); //retrieve console singleton
+	if ( args == "" ) {		
+		console->AddError( "debugLighting :: this command requires an int arg!!!" );
+		return;
+	}
+
 	const int argVal =  atoi( args.c_str() );
 	if ( argVal == 0 ) {
 		g_cvar_debugLighting->SetState( false );
-	} else if ( argVal < 0 || argVal > 7 ) {
-		Console * console = Console::getInstance();
-		console->AddError( "debugLighting :: Invalid Arg!!!" );
+	} else if ( argVal < 0 || argVal > 6 ) {
+		console->AddError( "debugLighting :: invalid arg!!!" );
 	} else {
 		g_cvar_debugLighting->SetState( true );
 		g_cvar_debugLighting->SetArgs( args );
@@ -70,24 +76,64 @@ Fn_ShowVertTransforms
 ================================
 */
 void Fn_ShowVertTransforms( Str args ) {
+	Console * console = Console::getInstance(); //retrieve console singleton
+	if ( args == "" ) {		
+		console->AddError( "showVertTransforms :: this command requires an int arg!!!" );
+		return;
+	}
+
 	if ( atoi( args.c_str() ) == 0 ) {
 		g_cvar_showVertTransform->SetState( false );
 	} else if ( atoi( args.c_str() ) == 1 ) {
 		g_cvar_showVertTransform->SetState( true );
+	} else {		
+		console->AddError( "showVertTransforms :: invalid arg!!!" );
 	}
 }
 
 /*
 ================================
-Fn_FrameCounter
+Fn_FPS
 ================================
 */
 void Fn_FPS( Str args ) {
+	if ( args != "" ) {
+		Console * console = Console::getInstance(); //retrieve console singleton
+		console->AddError( "showFPS :: this command takes no args!!!" );
+		return;
+	}
+
 	//toggle the state of the cvar
 	if ( g_cvar_fps->GetState() ) {
 		g_cvar_fps->SetState( false );
 	} else {
 		g_cvar_fps->SetState( true );
+	}
+}
+
+/*
+================================
+Fn_ShowBloom
+================================
+*/
+void Fn_ShowBloom( Str args ) {
+	Console * console = Console::getInstance(); //retrieve console singleton
+	if ( args == "" ) {
+		console->AddError( "showBloom :: this command requires an int arg!!!" );
+		return;
+	}
+
+	if ( atoi( args.c_str() ) == 0 ) {
+		g_cvar_showBloom->SetState( false );
+		g_cvar_showBloom->SetArgs( args );
+	} else if ( atoi( args.c_str() ) == 1 ) {
+		g_cvar_showBloom->SetState( true );
+		g_cvar_showBloom->SetArgs( args );
+	} else if ( atoi( args.c_str() ) == 2 ) {
+		g_cvar_showBloom->SetState( true );
+		g_cvar_showBloom->SetArgs( args );
+	} else {		
+		console->AddError( "showBloom :: invalid arg!!!" );
 	}
 }
 
@@ -873,6 +919,16 @@ void CommandSys::BuildCommands() {
 	reloadSceneCommand->description = Str( "Reload current scene." );
 	reloadSceneCommand->fn = Fn_ReloadScene;
 	m_commands.push_back( reloadSceneCommand );
+
+	Cmd * showBloomCommand = new Cmd;
+	showBloomCommand->name = Str( "showBloom" );
+	showBloomCommand->description = Str( "Enable/Disable bloom post process effect." );
+	showBloomCommand->fn = Fn_ShowBloom;
+	m_commands.push_back( showBloomCommand );
+
+	//set bloom state to enabled by default
+	g_cvar_showBloom->SetState( true );
+	g_cvar_showBloom->SetArgs( "1" );
 }
 
 /*

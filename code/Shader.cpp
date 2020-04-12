@@ -904,6 +904,7 @@ void Shader::SetUniform1f( const char * uniform, const int count, const float * 
 	
 	const int uniformID = GetUniform( uniform );
 	glUniform1fv( uniformID, count, values );
+	myglGetError();
 }
 
 /*

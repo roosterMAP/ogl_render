@@ -39,6 +39,7 @@ extern CVar * g_cvar_renderLightModels;
 extern CVar * g_cvar_showVertTransform;
 extern CVar * g_cvar_showEdgeHighlights;
 extern CVar * g_cvar_fps;
+extern CVar * g_cvar_showBloom;
 
 Scene * g_scene = Scene::getInstance(); //declare g_scene singleton
 
@@ -293,6 +294,7 @@ void RenderScene( const float * view, const float * projection ) {
 		for ( unsigned int j = 0; j < mesh->m_surfaces.size(); j++ ) {
 			matDecl = MaterialDecl::GetMaterialDecl( mesh->m_surfaces[j]->materialName.c_str() );
 			matDecl->BindTextures();
+			matDecl->PassVec3Uniforms();
 
 			matDecl->shader->SetUniform1i( "screenWidth", 1, &gScreenWidth );
 
@@ -447,9 +449,24 @@ void drawFrame( void ) {
 		glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 );
 		glBlitFramebuffer( 0, 0, gScreenWidth, gScreenHeight, 0, 0,  gScreenWidth, gScreenHeight, GL_COLOR_BUFFER_BIT, GL_NEAREST );
 	} else {
+		int showBloom = 0;
+		if ( g_cvar_showBloom->GetState() ) {
+			showBloom = atoi( g_cvar_showBloom->GetArgs().c_str() );
+			if ( showBloom != 0 ) {
+				postProcessManager.SetBloom( true );
+			}
+		} else {
+			postProcessManager.SetBloom( false );
+		}
+
 		postProcessManager.BlitFramebuffer( &mainFBO );
 		postProcessManager.Bloom();
-		postProcessManager.Draw( 1.0 );
+
+		if ( showBloom == 2 ) {
+			postProcessManager.DrawBloomOnly( 1.0 );
+		} else {
+			postProcessManager.Draw( 1.0 );
+		}		
 		glBindFramebuffer( GL_FRAMEBUFFER, 0 );
 	}
 	
@@ -587,7 +604,7 @@ int main( int argc, char ** argv ) {
 	//create post processing frame buffer
 	postProcessManager = PostProcessManager( gScreenWidth, gScreenHeight, "postProcess" );
 	postProcessManager.SetBlitParams( Vec2( 0.0, 0.0 ), Vec2( gScreenWidth, gScreenHeight ), Vec2( 0.0, 0.0 ), Vec2( gScreenWidth, gScreenHeight ) );
-	//postProcessManager.BloomEnable( 0.5 );
+	postProcessManager.BloomEnable( 0.5f );
 	postProcessManager.LUTEnable( "data\\texture\\system\\LUT_default.tga" );
 
 	glutMainLoop(); //Do the infinite loop. This starts glut's inifinite loop.

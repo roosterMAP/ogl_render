@@ -1029,14 +1029,23 @@ std::vector< unsigned int > EnvProbe::RenderCubemaps( Shader * shader, const uns
 				//bind textures
 				shader->UseProgram();
 				unsigned int slotCount = 0;
-				textureMap::iterator it = matDecl->m_textures.begin();
-				while ( it != matDecl->m_textures.end() ) {
-					std::string uniformName = it->first;
-					Texture* texture = it->second;
+				textureMap::iterator it_t = matDecl->m_textures.begin();
+				while ( it_t != matDecl->m_textures.end() ) {
+					std::string uniformName = it_t->first;
+					Texture* texture = it_t->second;
 					shader->SetAndBindUniformTexture( uniformName.c_str(), slotCount, texture->GetTarget(), texture->GetName() );
 
 					slotCount++;
-					it++;
+					it_t++;
+				}
+
+				//bind float decl uniforms
+				vec3Map::iterator it_f = matDecl->m_vec3s.begin();
+				while ( it_f != matDecl->m_vec3s.end() ) {
+					const std::string uniformName = it_f->first;
+					const Vec3 val = it_f->second;
+					shader->SetUniform3f( uniformName.c_str(), 1, val.as_ptr() );
+					it_f++;
 				}
 
 				//pass in camera data

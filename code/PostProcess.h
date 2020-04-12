@@ -25,10 +25,12 @@ class PostProcessManager {
 
 		bool BloomEnable( float resScale=0.5 );
 		void Bloom();
+		void SetBloom( bool val ) { m_bloomEnabled = val; }
 
 		void LUTEnable( Str lut_image );
 
 		void Draw( const float exposure );
+		void DrawBloomOnly( const float exposure );
 
 	protected:
 		Framebuffer m_PostProcessFBO;
@@ -37,7 +39,7 @@ class PostProcessManager {
 		unsigned int m_blit_dstX, m_blit_dstY, m_blit_dstW, m_blit_dstH;
 
 		bool m_bloomEnabled;
-		Vec3 m_bloomThreshold;
+		float m_bloomThreshold;
 		Framebuffer m_bloomFBOs[2];
 		Framebuffer m_bloomThresholdFBO;
 		unsigned int m_bloomRenderTarget_idx;

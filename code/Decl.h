@@ -7,6 +7,7 @@
 #include "Shader.h"
 #include "Texture.h"
 #include "String.h"
+#include "Vector.h"
 
 //in the material decl, a texture entry is a uniform name pointing to a type and a relative path
 struct TextureSpecs {
@@ -18,6 +19,7 @@ class MaterialDecl;
 typedef std::map< std::string, MaterialDecl* > resourceMap_t;
 typedef std::map< std::string, TextureSpecs* > texturePathMap;
 typedef std::map< std::string, Texture* > textureMap;
+typedef std::map< std::string, Vec3 > vec3Map;
 
 /*
 ================================
@@ -55,15 +57,17 @@ class MaterialDecl : public Decl {
 		static MaterialDecl * GetMaterialDecl( const char * name );
 		bool CompileShader();
 		void BindTextures();
+		void PassVec3Uniforms();
 
 		std::string m_shaderProg;
-		textureMap m_textures;		
+		textureMap m_textures;
+		vec3Map m_vec3s;
 
 		static resourceMap_t s_matDecls;
 
 	private:
 		static MaterialDecl * LoadMaterialDecl( const char * name );
-		static bool LoadPathsFromFile( const char * decl_relative, std::string &shaderProg, texturePathMap & texturePaths );				
+		static bool LoadPathsFromFile( const char * decl_relative, std::string &shaderProg, texturePathMap & texturePaths, vec3Map & vec3Uniforms );				
 };
 
 #endif

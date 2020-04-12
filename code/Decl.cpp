@@ -16,7 +16,7 @@ std::vector< Texture* > Texture::s_textures;
 MaterialDecl::LoadPathsFromFile
 ====================================
 */
-bool MaterialDecl::LoadPathsFromFile( const char * decl_relative, std::string & shaderProg, texturePathMap & texturePaths ) {
+bool MaterialDecl::LoadPathsFromFile( const char * decl_relative, std::string &shaderProg, texturePathMap & texturePaths, vec3Map & vec3Uniforms ) {
 	char decl_absolute[ 2048 ];
 	RelativePathToFullPath( decl_relative, decl_absolute );
 	strcat( decl_absolute, ".txt" );
@@ -31,6 +31,9 @@ bool MaterialDecl::LoadPathsFromFile( const char * decl_relative, std::string & 
 	char strBuffer1[ 1024 ];
 	char strBuffer2[ 1024 ];
 	char strBuffer3[ 1024 ];
+	float floatBuffer1;
+	float floatBuffer2;
+	float floatBuffer3;
 	std::string uniformName;
 	std::string textureType;
 	std::string texturePath;
@@ -50,6 +53,11 @@ bool MaterialDecl::LoadPathsFromFile( const char * decl_relative, std::string & 
 			TextureSpecs * newTextureSpec = new TextureSpecs();
 			newTextureSpec->type = "framebuffer";
 			texturePaths.insert( std::make_pair( uniformName, newTextureSpec ) ); //add to texture resource
+
+		} else if ( sscanf( buff, "emissiveColor %f %f %f", &floatBuffer1, &floatBuffer2, &floatBuffer3 ) == 3 ) {
+			uniformName = "emissiveColor";
+			findAndReplaceAll( uniformName, "\r\n", "" );
+			vec3Uniforms[uniformName] = Vec3( floatBuffer1, floatBuffer2, floatBuffer3 );
 
 		} else if ( sscanf( buff, "%s %s %s", strBuffer1, strBuffer2, strBuffer3 ) == 3 ) { //associates a uniform name with a texture
 			uniformName = strBuffer1;
@@ -146,9 +154,10 @@ MaterialDecl * MaterialDecl::LoadMaterialDecl( const char * name ) {
 	std::string shaderProg;
 	texturePathMap texturePaths;
 	textureMap textures;
+	vec3Map vec3Uniforms;
 
 	// try to load decl, return false if failed
-    if ( !LoadPathsFromFile( shaderDir, shaderProg, texturePaths ) ) {
+    if ( !LoadPathsFromFile( shaderDir, shaderProg, texturePaths, vec3Uniforms ) ) {
 		return NULL;
 	}
 
@@ -199,6 +208,7 @@ MaterialDecl * MaterialDecl::LoadMaterialDecl( const char * name ) {
 	decl->setName( name );
 	decl->m_shaderProg = shaderProg;
 	decl->m_textures = textures;
+	decl->m_vec3s = vec3Uniforms;
 	return decl;
 }
 
@@ -223,6 +233,7 @@ MaterialDecl::BindTextures
 void MaterialDecl::BindTextures() {
 	shader->UseProgram();
 
+	//pass textures
 	unsigned int slotCount = 0;
 	textureMap::iterator it = m_textures.begin();
 	while ( it != m_textures.end() ) {
@@ -234,6 +245,23 @@ void MaterialDecl::BindTextures() {
 			shader->SetAndBindUniformTexture( uniformName.c_str(), slotCount, texture->GetTarget(), texture->GetName() );
 		}
 		slotCount++;
+		it++;
+	}
+}
+
+/*
+====================================
+MaterialDecl::PassFloatUniforms
+====================================
+*/
+void MaterialDecl::PassVec3Uniforms() {
+	shader->UseProgram();
+
+	vec3Map::iterator it = m_vec3s.begin();
+	while ( it != m_vec3s.end() ) {
+		const std::string uniformName = it->first;
+		const Vec3 val = it->second;
+		shader->SetUniform3f( uniformName.c_str(), 1, val.as_ptr() );
 		it++;
 	}
 }

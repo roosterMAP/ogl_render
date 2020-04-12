@@ -6,6 +6,7 @@ uniform sampler2D albedoTexture;
 uniform sampler2D specularTexture;
 uniform sampler2D normalTexture;
 uniform sampler2D glossTexture;
+uniform vec3 emissiveColor;
 
 uniform sampler2DShadow shadowAtlas;
 
@@ -191,6 +192,7 @@ float distanceToLine( vec3 a, vec3 ab, vec3 v ) {
 void main() {
 	//sample texture value for current fragment
 	vec3 albedo = texture( albedoTexture, TexCoord ).rgb;
+	float emissive = texture( albedoTexture, TexCoord ).a;
 	vec3 specular = texture( specularTexture, TexCoord ).rgb;
 	vec3 normal = texture( normalTexture, TexCoord ).rgb;
 	float roughness = 1.0 - texture( glossTexture, TexCoord ).r;
@@ -287,6 +289,9 @@ void main() {
 	}
 
 	totalRadiance += ambientComponent;
+
+	//emmisive
+	totalRadiance += emissiveColor * emissive;
 
 	FragColor = vec4( totalRadiance, 1.0 );
 }

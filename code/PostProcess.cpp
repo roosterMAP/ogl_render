@@ -147,7 +147,7 @@ bool PostProcessManager::BloomEnable( float resScale ) {
 	}
 	m_bloomThresholdFBO.Unbind();
 	m_bloomThresholdFBO.CreateScreen();
-	m_bloomThreshold = Vec3( 0.2126, 0.7152, 0.0722 );	//hard coded for now
+	m_bloomThreshold = 1.5f;
 	
 	//init bloom framebuffers
 	for ( unsigned int i = 0; i < 2; i++ ){
@@ -176,6 +176,11 @@ bool PostProcessManager::BloomEnable( float resScale ) {
 	delete[] offsets;
 	offsets = nullptr;
 
+	//pin the bloom shaderprogs so they dont get sleared on scene load/reload
+	Shader * bloomThresholdShader = m_bloomThresholdFBO.GetShader();
+	bloomThresholdShader->PinShader();
+	bloomShader->PinShader();
+
 	return true;
 }
 
@@ -193,7 +198,7 @@ void PostProcessManager::Bloom() {
 	//clamp the postprocess framebuffer and write to the render target of m_bloomThresholdFBO
 	Shader * bloomThresholdShader = m_bloomThresholdFBO.GetShader();
 	bloomThresholdShader->UseProgram();
-	bloomThresholdShader->SetUniform3f( "threshold", 1, m_bloomThreshold.as_ptr() );
+	bloomThresholdShader->SetUniform1f( "threshold", 1, &m_bloomThreshold );
 	m_bloomThresholdFBO.Bind();	
 	m_bloomThresholdFBO.Draw( m_PostProcessFBO.m_attachements[0] );
 	m_bloomThresholdFBO.Unbind();
@@ -206,7 +211,7 @@ void PostProcessManager::Bloom() {
 	bool first_iteration = true;
 	Shader * bloomShader = m_bloomFBOs[horizontalSwitch].GetShader();
 	bloomShader->UseProgram();
-	for ( int i = 0; i < 2; i++ ) {
+	for ( int i = 0; i < 6; i++ ) {
 		const int horizontalUniform = ( int )horizontalSwitch;
 		m_bloomFBOs[horizontalSwitch].Bind();
 		bloomShader->SetUniform1i( "horizontal", 1, &horizontalUniform );
@@ -224,7 +229,7 @@ void PostProcessManager::Bloom() {
 	}
 	m_bloomFBOs[0].Unbind();
 
-	//pass in second bloomFBO render target to bne additively blended with m_PostProcessFBO target.
+	//pass in second bloomFBO render target to be additively blended with m_PostProcessFBO target.
 	Shader * postProcessQuad_shader = m_PostProcessFBO.GetShader();
 	postProcessQuad_shader->UseProgram();
 	postProcessQuad_shader->SetAndBindUniformTexture( "bloomTexture", 1, GL_TEXTURE_2D, m_bloomFBOs[0].m_attachements[0] );
@@ -256,4 +261,20 @@ void PostProcessManager::Draw( const float exposure ) {
 	postProcessQuad_shader->SetUniform1f( "exposure", 1, &exposure );
 
 	m_PostProcessFBO.Draw( m_PostProcessFBO.m_attachements[0] );
+}
+
+/*
+===============================
+PostProcessManager::DrawBloomOnly
+===============================
+*/
+void PostProcessManager::DrawBloomOnly( const float exposure ) {
+	Shader * postProcessQuad_shader = m_PostProcessFBO.GetShader();
+	postProcessQuad_shader->UseProgram();
+
+	const int bloomEnabled = 0;
+	postProcessQuad_shader->SetUniform1i( "bloomEnabled", 1, &bloomEnabled );
+	postProcessQuad_shader->SetUniform1f( "exposure", 1, &exposure );
+
+	m_PostProcessFBO.Draw( m_bloomFBOs[0].m_attachements[0] );
 }
