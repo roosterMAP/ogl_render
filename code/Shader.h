@@ -54,6 +54,8 @@ class Shader {
 public:
 	Shader();
 	~Shader() {};
+
+	static void myglGetError();
 	
 	Shader * GetShader( const char *sprefix );
 	Shader * LoadShader( const char *sprefix );

@@ -5,9 +5,11 @@ in vec2 TexCoords;
 
 uniform sampler2D screenTexture;
 uniform sampler2D bloomTexture;
+uniform sampler2D ssaoTexture;
 uniform sampler3D lookup;
 uniform float exposure;
 uniform bool bloomEnabled;
+uniform bool ssaoEnabled;
 
 void main() {
 	/*
@@ -45,7 +47,13 @@ void main() {
 	//Gaussian bloom
 	if ( bloomEnabled ) {
 		vec3 bloomColor = texture( bloomTexture, TexCoords ).rgb;
-		hdrColor += bloomColor; //additive blending
+		hdrColor += bloomColor / 3.0;
+	}
+
+	//ssao
+	if ( ssaoEnabled ) {
+		float ao = texture( ssaoTexture, TexCoords ).r;
+		hdrColor *= ao;
 	}
 
 	//Reinhard tone mapping

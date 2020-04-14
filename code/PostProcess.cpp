@@ -14,7 +14,8 @@ PostProcessManager::PostProcessManager( unsigned int width, unsigned int height,
 	m_PostProcessFBO = Framebuffer( "screenTexture" );
 	m_PostProcessFBO.CreateNewBuffer( width, height, shaderPrefix );
 	m_PostProcessFBO.AttachTextureBuffer( GL_RGBA16F, GL_COLOR_ATTACHMENT0, GL_RGBA, GL_FLOAT );
-	m_PostProcessFBO.AttachRenderBuffer();
+	//m_PostProcessFBO.AttachRenderBuffer();
+	m_PostProcessFBO.AttachTextureBuffer( GL_DEPTH_COMPONENT, GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT, GL_FLOAT );
 	m_PostProcessFBO.CreateScreen();
 	m_PostProcessFBO.Unbind();
 
@@ -54,6 +55,9 @@ void PostProcessManager::BlitFramebuffer( Framebuffer * inputFBO ) {
 	glBlitFramebuffer(	m_blit_srcX, m_blit_srcY, m_blit_srcW, m_blit_srcH,
 						m_blit_dstX, m_blit_dstY, m_blit_dstW, m_blit_dstH,
 						GL_COLOR_BUFFER_BIT, GL_NEAREST	);
+	glBlitFramebuffer(	m_blit_srcX, m_blit_srcY, m_blit_srcW, m_blit_srcH,
+						m_blit_dstX, m_blit_dstY, m_blit_dstW, m_blit_dstH,
+						GL_DEPTH_BUFFER_BIT, GL_NEAREST	);
 	glBindFramebuffer( GL_FRAMEBUFFER, 0 ); //unbind
 }
 
@@ -154,7 +158,7 @@ bool PostProcessManager::BloomEnable( float resScale ) {
 		m_bloomFBOs[i].SetColorBufferUniform( "image" );
 		m_bloomFBOs[i].CreateNewBuffer( ( unsigned int )m_PostProcessFBO.GetWidth() * resScale, ( unsigned int )m_PostProcessFBO.GetHeight() * resScale, "bloom_gaussian" );
 		m_bloomFBOs[i].AttachTextureBuffer( GL_RGBA16F, GL_COLOR_ATTACHMENT0, GL_RGBA, GL_FLOAT );
-		if( !m_bloomFBOs[i].Status() ) {
+		if ( !m_bloomFBOs[i].Status() ) {
 			return false;
 		}
 		m_bloomFBOs[i].Unbind();
@@ -235,6 +239,103 @@ void PostProcessManager::Bloom() {
 	postProcessQuad_shader->SetAndBindUniformTexture( "bloomTexture", 1, GL_TEXTURE_2D, m_bloomFBOs[0].m_attachements[0] );
 }
 
+/*
+===============================
+PostProcessManager::SSAOEnable
+	-create framebuffer for SSAO
+===============================
+*/
+bool PostProcessManager::SSAOEnable( const Camera * camera ) {
+	m_ssaoEnabled = true;
+	m_camera = camera;
+
+	//init ssao framebuffer
+	m_ssaoFBO = Framebuffer( "depthTexture" );
+
+	m_ssaoFBO.CreateNewBuffer( ( unsigned int )m_PostProcessFBO.GetWidth(), ( unsigned int )m_PostProcessFBO.GetHeight(), "ssao" );
+	m_ssaoFBO.AttachTextureBuffer( GL_RGB, GL_COLOR_ATTACHMENT0, GL_RGB, GL_UNSIGNED_BYTE );
+	if ( !m_ssaoFBO.Status() ) {
+		return false;
+	}
+	m_ssaoFBO.Unbind();
+	m_ssaoFBO.CreateScreen();
+
+	//pin ssao shader
+	Shader * ssaoShader = m_ssaoFBO.GetShader();
+	ssaoShader->PinShader();
+
+	//pass uniforms that can be pre-calculated
+
+	//max dist for sampler fragment to be able to occlude current fragment
+	const float sampleRadius = 0.85f;
+	ssaoShader->SetUniform1f( "sampleRadius", 1, &sampleRadius );
+
+	//intensity of occlusion :: ao = pow( ao, strenth );
+	const float strength = 0.9f;
+	ssaoShader->SetUniform1f( "strength", 1, &strength );
+
+	//generate samples between (-1.0, 1.0) and store in karnel array
+	Vec3 kernel[SSAO_KERNEL_SIZE];
+	for ( int i = 0 ; i < SSAO_KERNEL_SIZE ; i++ ) {
+		float scale = ( float )i / ( float )( SSAO_KERNEL_SIZE );
+		Vec3 v;
+		v.x = 2.0f * ( float )rand() / RAND_MAX - 1.0f;
+		v.y = 2.0f * ( float )rand() / RAND_MAX - 1.0f;
+		v.z = 2.0f * ( float )rand() / RAND_MAX - 1.0f;
+
+		// Use an acceleration function so more points are located closer to the origin
+		v *= ( 0.1f + 0.9f * scale * scale );		
+		kernel[i] = v;
+	}
+	ssaoShader->SetUniform3f( "kernel", SSAO_KERNEL_SIZE, kernel[0].as_ptr() );
+
+	return true;
+}
+
+/*
+===============================
+PostProcessManager::SSAO
+	-updates the color attachement to the ssao fbo texture attachement
+===============================
+*/
+void PostProcessManager::SSAO() {
+	if ( !m_ssaoEnabled ) {
+		return;
+	}
+
+	Shader * ssaoShader = m_ssaoFBO.GetShader();
+	ssaoShader->UseProgram();
+
+	//for some reason, projection matrix must be adjusted
+	const Mat4 projection = m_camera->GetProjection();
+	Mat4 aoProjection = projection;
+	aoProjection[2][3] = 1.0f;
+	ssaoShader->SetUniformMatrix4f( "projection", 1, false, projection.as_ptr() );
+
+	const float aspect = ( float )m_PostProcessFBO.GetWidth() / ( float )m_PostProcessFBO.GetHeight();
+	ssaoShader->SetUniform1f( "aspect", 1, &aspect );
+
+	const float tanHalfFOV = tanf( to_radians( m_camera->m_fov / 2.0f ) );
+	ssaoShader->SetUniform1f( "tanHalfFOV", 1, &tanHalfFOV );
+
+	ssaoShader->SetUniform1f( "near", 1, &m_camera->m_near );
+	ssaoShader->SetUniform1f( "far", 1, &m_camera->m_far );
+	
+	m_ssaoFBO.Bind();
+	m_ssaoFBO.Draw( m_PostProcessFBO.m_attachements[1] );
+	m_ssaoFBO.Unbind();
+
+	//pass ssaoFBO render target to post process shader.
+	Shader * postProcessQuad_shader = m_PostProcessFBO.GetShader();
+	postProcessQuad_shader->UseProgram();
+	postProcessQuad_shader->SetAndBindUniformTexture( "ssaoTexture", 2, GL_TEXTURE_2D, m_ssaoFBO.m_attachements[0] );
+}
+
+/*
+===============================
+PostProcessManager::LUTEnable
+===============================
+*/
 void PostProcessManager::LUTEnable( Str lut_image ) {
 	m_lutTexture = new LUTTexture();
 	if ( !m_lutTexture->InitFromFile( lut_image.c_str() ) ) {
@@ -244,7 +345,7 @@ void PostProcessManager::LUTEnable( Str lut_image ) {
 	//pass in second bloomFBO render target to bne additively blended with m_PostProcessFBO target.
 	Shader * postProcessQuad_shader = m_PostProcessFBO.GetShader();
 	postProcessQuad_shader->UseProgram();
-	postProcessQuad_shader->SetAndBindUniformTexture( "lookup", 2, GL_TEXTURE_3D, m_lutTexture->GetName() );
+	postProcessQuad_shader->SetAndBindUniformTexture( "lookup", 3, GL_TEXTURE_3D, m_lutTexture->GetName() );
 }
 
 /*
@@ -260,21 +361,58 @@ void PostProcessManager::Draw( const float exposure ) {
 	postProcessQuad_shader->SetUniform1i( "bloomEnabled", 1, &bloomEnabled );
 	postProcessQuad_shader->SetUniform1f( "exposure", 1, &exposure );
 
+	const int ssaoEnabled = ( int )m_ssaoEnabled;
+	postProcessQuad_shader->SetUniform1i( "ssaoEnabled", 1, &ssaoEnabled );
+
 	m_PostProcessFBO.Draw( m_PostProcessFBO.m_attachements[0] );
 }
 
 /*
 ===============================
 PostProcessManager::DrawBloomOnly
+	-draws the post process fbo with the first bloomFBO attachement as the passed in input texture
 ===============================
 */
 void PostProcessManager::DrawBloomOnly( const float exposure ) {
-	Shader * postProcessQuad_shader = m_PostProcessFBO.GetShader();
-	postProcessQuad_shader->UseProgram();
+	Shader * framebuffer_shader = NULL;
+	framebuffer_shader = framebuffer_shader->GetShader( "framebuffer" );
+	framebuffer_shader->UseProgram();
 
-	const int bloomEnabled = 0;
-	postProcessQuad_shader->SetUniform1i( "bloomEnabled", 1, &bloomEnabled );
-	postProcessQuad_shader->SetUniform1f( "exposure", 1, &exposure );
+	glDisable( GL_DEPTH_TEST );
 
-	m_PostProcessFBO.Draw( m_bloomFBOs[0].m_attachements[0] );
+	framebuffer_shader->UseProgram();
+	framebuffer_shader->SetAndBindUniformTexture( "screenTexture", 0, GL_TEXTURE_2D, m_bloomFBOs[0].m_attachements[0] );
+
+	glBindVertexArray( m_PostProcessFBO.GetScreenVAO() );
+	glDrawArrays( GL_QUADS, 0, 4 );	
+
+	glBindTexture( GL_TEXTURE_2D, 0 );
+	glBindVertexArray( 0 );
+
+	glEnable( GL_DEPTH_TEST );
+}
+
+/*
+===============================
+PostProcessManager::DrawSSAOOnly
+	-draws the post process fbo with the ssao attachement as the passed in input texture
+===============================
+*/
+void PostProcessManager::DrawSSAOOnly( const float exposure ) {
+	Shader * framebuffer_shader = NULL;
+	framebuffer_shader = framebuffer_shader->GetShader( "framebuffer" );
+	framebuffer_shader->UseProgram();
+
+	glDisable( GL_DEPTH_TEST );
+
+	framebuffer_shader->UseProgram();
+	framebuffer_shader->SetAndBindUniformTexture( "screenTexture", 0, GL_TEXTURE_2D, m_ssaoFBO.m_attachements[0] );
+
+	glBindVertexArray( m_PostProcessFBO.GetScreenVAO() );
+	glDrawArrays( GL_QUADS, 0, 4 );	
+
+	glBindTexture( GL_TEXTURE_2D, 0 );
+	glBindVertexArray( 0 );
+
+	glEnable( GL_DEPTH_TEST );
 }

@@ -19,6 +19,7 @@ CVar * g_cvar_showEdgeHighlights = new CVar();
 CVar * g_cvar_brdfIntegrateLUT = new CVar();
 CVar * g_cvar_fps = new CVar();
 CVar * g_cvar_showBloom = new CVar();
+CVar * g_cvar_showSSAO = new CVar();
 
 CommandSys * g_cmdSys = CommandSys::getInstance(); //declare g_cmdSys singleton
 
@@ -134,6 +135,32 @@ void Fn_ShowBloom( Str args ) {
 		g_cvar_showBloom->SetArgs( args );
 	} else {		
 		console->AddError( "showBloom :: invalid arg!!!" );
+	}
+}
+
+/*
+================================
+Fn_ShowSSAO
+================================
+*/
+void Fn_ShowSSAO( Str args ) {
+	Console * console = Console::getInstance(); //retrieve console singleton
+	if ( args == "" ) {
+		console->AddError( "showSSAO :: this command requires an int arg!!!" );
+		return;
+	}
+
+	if ( atoi( args.c_str() ) == 0 ) {
+		g_cvar_showSSAO->SetState( false );
+		g_cvar_showSSAO->SetArgs( args );
+	} else if ( atoi( args.c_str() ) == 1 ) {
+		g_cvar_showSSAO->SetState( true );
+		g_cvar_showSSAO->SetArgs( args );
+	} else if ( atoi( args.c_str() ) == 2 ) {
+		g_cvar_showSSAO->SetState( true );
+		g_cvar_showSSAO->SetArgs( args );
+	} else {		
+		console->AddError( "showSSAO :: invalid arg!!!" );
 	}
 }
 
@@ -929,6 +956,16 @@ void CommandSys::BuildCommands() {
 	//set bloom state to enabled by default
 	g_cvar_showBloom->SetState( true );
 	g_cvar_showBloom->SetArgs( "1" );
+
+	Cmd * showSSAOCommand = new Cmd;
+	showSSAOCommand->name = Str( "showSSAO" );
+	showSSAOCommand->description = Str( "Enable/Disable ssao post process effect." );
+	showSSAOCommand->fn = Fn_ShowSSAO;
+	m_commands.push_back( showSSAOCommand );
+
+	//set ssao state to enabled by default
+	g_cvar_showSSAO->SetState( true );
+	g_cvar_showSSAO->SetArgs( "1" );
 }
 
 /*

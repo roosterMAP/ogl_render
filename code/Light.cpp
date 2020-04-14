@@ -83,6 +83,8 @@ void Light::Initialize() {
 
 	//initialize members
 	m_shadowCaster = false;
+	m_cachedShadows = true;
+	m_firstFrameRendered = false;
 	m_near_plane = 0.1f;
 	m_far_plane = 10.0f;
 	m_xfrm = Mat4();

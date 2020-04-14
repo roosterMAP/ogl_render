@@ -88,6 +88,8 @@ class Light {
 		void PassPrepassUniforms( Shader* shader, int idx ) const;
 		
 		int m_idx;
+		bool m_cachedShadows;
+		bool m_firstFrameRendered;
 
 		static float s_lightAttenuationBias;
 
@@ -107,7 +109,7 @@ class Light {
 
 		LightStorage m_uniformBlock;
 		LightEffectStorage m_boundsUniformBlock;
-		bool m_shadowCaster;
+		bool m_shadowCaster;		
 		float m_near_plane, m_far_plane;
 		Mat4 m_xfrm;
 		Vec2 m_PosInShadowAtlas;

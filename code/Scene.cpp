@@ -160,6 +160,12 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 				if ( intVal == 1 ) {
 					currentLight->SetShadow( true );
 				}
+			} else if ( sscanf_s( buff, "\tcch %d", &intVal ) == 1 ) { //cache shadows
+				if ( intVal == 1 ) {
+					currentLight->m_cachedShadows = true;
+				} else {
+					currentLight->m_cachedShadows = false;
+				}
 			}
 		} else if ( loadingDirectionalLightEntity ) { //load directionallight data
 			if ( strncmp( buff, "}", 1 ) == 0 ) {
@@ -183,6 +189,12 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 				if ( intVal == 1 ) {
 					currentLight->SetShadow( true );
 				}
+			} else if ( sscanf_s( buff, "\tcch %d", &intVal ) == 1 ) { //cache shadows
+				if ( intVal == 1 ) {
+					currentLight->m_cachedShadows = true;
+				} else {
+					currentLight->m_cachedShadows = false;
+				}
 			}
 		} else if ( loadingPointLightEntity ) { //load pointlight data
 			if ( strncmp( buff, "}", 1 ) == 0 ) {
@@ -200,6 +212,12 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 			} else if ( sscanf_s( buff, "\tsha %d", &intVal ) == 1 ) { //shadow
 				if ( intVal == 1 ) {
 					currentLight->SetShadow( true );
+				}
+			} else if ( sscanf_s( buff, "\tcch %d", &intVal ) == 1 ) { //cache shadows
+				if ( intVal == 1 ) {
+					currentLight->m_cachedShadows = true;
+				} else {
+					currentLight->m_cachedShadows = false;
 				}
 			}
 		} else if ( loadingEnvProbeEntity ) { //load environment probe data

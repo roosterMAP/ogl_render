@@ -559,16 +559,15 @@ void Mat4::LookAt2( const Vec3 look, const Vec3 up, const Vec3 pos ) {
 }
 
 void Mat4::Perspective( const float verticalFOV, const float aspect, const float near, const float far ) {
-	const float top = tan( verticalFOV / 2.0f ) * near;
-	const float right = top * aspect;
+	const float tanHalfFOV = tanf( verticalFOV / 2.0f );
 
-	m_col1[0] = near / right;
+	m_col1[0] = 1.0f / ( tanHalfFOV * aspect );
 	m_col1[1] = 0.0f;
 	m_col1[2] = 0.0f;
 	m_col1[3] = 0.0f;
 
 	m_col2[0] = 0.0f;
-	m_col2[1] = near / top;
+	m_col2[1] = 1.0f / tanHalfFOV;
 	m_col2[2] = 0.0f;
 	m_col2[3] = 0.0f;
 

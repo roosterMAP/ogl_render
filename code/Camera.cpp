@@ -23,20 +23,8 @@ Camera::Camera( float fieldOfView, Vec3 camPos, Vec3 camLook ) {
 	m_right.normalize();
 	m_pitch = 0.0;
 	m_yaw = 0.0;
-	m_near = 0.01f;
+	m_near = 0.1f;
 	m_far = 100.0f;
-}
-
-Mat4 Camera::viewMatrix() {
-	Mat4 mat = Mat4();
-	mat.LookAt( m_position, m_position + m_look, m_up );
-	return mat;
-}
-
-Mat4 Camera::projectionMatrix( float aspect ) {
-	Mat4 mat = Mat4();
-	mat.Perspective( to_radians( m_fov ), aspect, m_near, m_far );
-	return mat;
 }
 
 void Camera::FPLookOffset( float offset_x, float offset_y, float sensitivity ) {

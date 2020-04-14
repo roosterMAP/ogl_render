@@ -40,6 +40,7 @@ extern CVar * g_cvar_showVertTransform;
 extern CVar * g_cvar_showEdgeHighlights;
 extern CVar * g_cvar_fps;
 extern CVar * g_cvar_showBloom;
+extern CVar * g_cvar_showSSAO;
 
 Scene * g_scene = Scene::getInstance(); //declare g_scene singleton
 
@@ -273,8 +274,11 @@ void RenderScene( const float * view, const float * projection ) {
 	for ( unsigned int i = 0; i < g_scene->LightCount(); i++ ) {
 		g_scene->LightByIndex( i, &light );
 		if ( light->GetShadow() ) {
-			light->UpdateDepthBuffer( g_scene );
+			if ( ( light->m_cachedShadows && !light->m_firstFrameRendered ) || !light->m_cachedShadows ) {
+				light->UpdateDepthBuffer( g_scene );
+			}
 		}
+		light->m_firstFrameRendered = true;
 	}
 
 	//peform light binning
@@ -296,7 +300,19 @@ void RenderScene( const float * view, const float * projection ) {
 			matDecl->BindTextures();
 			matDecl->PassVec3Uniforms();
 
+			//pass in camera data
+			matDecl->shader->SetUniformMatrix4f( "view", 1, false, view );
+			matDecl->shader->SetUniformMatrix4f( "projection", 1, false, projection );			
+
+			//exit early if this material is errored out
+			if ( matDecl->m_shaderProg == "error" ) {
+				mesh->DrawSurface( j ); //draw surface
+				continue;
+			}	
+
 			matDecl->shader->SetUniform1i( "screenWidth", 1, &gScreenWidth );
+
+			matDecl->shader->SetUniform3f( "camPos", 1, camera.m_position.as_ptr() );
 
 			//bind the light lookup table
 			const int block_index = matDecl->shader->BufferBlockIndexByName( "light_LUT" );
@@ -310,17 +326,6 @@ void RenderScene( const float * view, const float * projection ) {
 			glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
 			glBindBufferBase( GL_SHADER_STORAGE_BUFFER, ssbo->GetBindingPoint(), ssbo->GetID() );
 			glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
-
-			//pass in camera data
-			matDecl->shader->SetUniformMatrix4f( "view", 1, false, view );
-			matDecl->shader->SetUniformMatrix4f( "projection", 1, false, projection );
-			matDecl->shader->SetUniform3f( "camPos", 1, camera.m_position.as_ptr() );
-
-			//exit early if this material is errored out
-			if ( matDecl->m_shaderProg == "error" ) {
-				mesh->DrawSurface( j ); //draw surface
-				continue;
-			}				
 
 			//pass lights data
 			for ( int k = 0; k < g_scene->LightCount(); k++ ) {
@@ -384,8 +389,10 @@ void drawFrame( void ) {
 	
 	const float aspect = ( float )gScreenWidth / ( float )gScreenHeight;
 
-	const Mat4 view = camera.viewMatrix();
-	const Mat4 projection = camera.projectionMatrix( aspect );
+	camera.UpdateView();
+	const Mat4 view = camera.GetView();
+	camera.UpdateProjection( aspect );
+	const Mat4 projection = camera.GetProjection();
 
 	//get polygon rendermode from g_cvar_showEdgeHighlights.
 	//0 -> no highlights, 1 -> with highlights, 2 -> only highlights
@@ -449,6 +456,9 @@ void drawFrame( void ) {
 		glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 );
 		glBlitFramebuffer( 0, 0, gScreenWidth, gScreenHeight, 0, 0,  gScreenWidth, gScreenHeight, GL_COLOR_BUFFER_BIT, GL_NEAREST );
 	} else {
+		postProcessManager.BlitFramebuffer( &mainFBO );
+
+		//init bloom state
 		int showBloom = 0;
 		if ( g_cvar_showBloom->GetState() ) {
 			showBloom = atoi( g_cvar_showBloom->GetArgs().c_str() );
@@ -459,14 +469,27 @@ void drawFrame( void ) {
 			postProcessManager.SetBloom( false );
 		}
 
-		postProcessManager.BlitFramebuffer( &mainFBO );
+		//init ssao state
+		int showSSAO = 0;
+		if ( g_cvar_showSSAO->GetState() ) {
+			showSSAO = atoi( g_cvar_showSSAO->GetArgs().c_str() );
+			if ( showSSAO != 0 ) {
+				postProcessManager.SetSSAO( true );
+			}
+		} else {
+			postProcessManager.SetSSAO( false );
+		}
+		
 		postProcessManager.Bloom();
+		postProcessManager.SSAO();
 
 		if ( showBloom == 2 ) {
-			postProcessManager.DrawBloomOnly( 1.0 );
+			postProcessManager.DrawBloomOnly( 1.0f );
+		} else if ( showSSAO == 2 ) {
+			postProcessManager.DrawSSAOOnly( 1.0f );
 		} else {
-			postProcessManager.Draw( 1.0 );
-		}		
+			postProcessManager.Draw( 1.0f );
+		}
 		glBindFramebuffer( GL_FRAMEBUFFER, 0 );
 	}
 	
@@ -605,6 +628,7 @@ int main( int argc, char ** argv ) {
 	postProcessManager = PostProcessManager( gScreenWidth, gScreenHeight, "postProcess" );
 	postProcessManager.SetBlitParams( Vec2( 0.0, 0.0 ), Vec2( gScreenWidth, gScreenHeight ), Vec2( 0.0, 0.0 ), Vec2( gScreenWidth, gScreenHeight ) );
 	postProcessManager.BloomEnable( 0.5f );
+	postProcessManager.SSAOEnable( &camera );
 	postProcessManager.LUTEnable( "data\\texture\\system\\LUT_default.tga" );
 
 	glutMainLoop(); //Do the infinite loop. This starts glut's inifinite loop.

@@ -65,7 +65,7 @@ Buffer * Buffer::GetBuffer( const char *name ) {
  myglGetError
  ===================================
  */
-void myglGetError() {
+void Shader::myglGetError() {
 	// check for up to 10 errors pending
 	for ( int i = 0 ; i < 10 ; i++ ) {
 		const int err = glGetError();
@@ -93,7 +93,11 @@ void myglGetError() {
 	}
 }
 
-
+/*
+ ===================================
+gCurrentProgram
+ ===================================
+ */
 static GLuint gCurrentProgram = 0;
 
 /*

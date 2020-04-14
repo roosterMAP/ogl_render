@@ -334,8 +334,6 @@ void Framebuffer::Draw( unsigned int colorBuffer ) {
 
 	m_shader->UseProgram();
 	m_shader->SetAndBindUniformTexture( m_colorbufferUniform.c_str(), 0, GL_TEXTURE_2D, colorBuffer );
-	glActiveTexture( GL_TEXTURE0 );
-	glBindTexture( GL_TEXTURE_2D, colorBuffer );
 
 	glBindVertexArray( m_screenVAO );
 	glDrawArrays( GL_QUADS, 0, 4 );	
