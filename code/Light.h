@@ -68,7 +68,7 @@ class Light {
 		void SetBrightness( float brt ) { m_uniformBlock.brightness = brt; }
 
 		const Vec3 GetDirection() const { return m_uniformBlock.direction; }
-		void SetDirection( Vec3 dir ) { m_uniformBlock.direction = dir; }
+		void SetDirection( Vec3 dir ) { m_uniformBlock.direction = dir.normal(); }
 
 		const float GetRadius() const { return m_uniformBlock.light_radius; }
 		void SetRadius( float radius );

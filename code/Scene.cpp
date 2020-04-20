@@ -176,9 +176,9 @@ bool Scene::LoadFromFile( const char * scn_relative ) {
 				currentLight->SetPosition( Vec3( val3 ) );
 			} else if ( sscanf_s( buff, "\tdir %f %f %f", &val3.x, &val3.y, &val3.z ) == 3 ) { //direction
 				currentLight->SetDirection( Vec3( val3 ) );
-			} else if ( sscanf_s( buff, "\tsiz %f", &val1 ) == 1 ) { //radius
+			} else if ( sscanf_s( buff, "\tsiz %f", &val1 ) == 1 ) { //radius of lightsource (size of the lightbulb)
 				currentLight->SetRadius( val1 );
-			} else if ( sscanf_s( buff, "\tmxr %f", &val1 ) == 1 ) { //max_radius
+			} else if ( sscanf_s( buff, "\tmxr %f", &val1 ) == 1 ) { //max_radius: artificially shortens the distance of a lights effect
 				currentLight->SetMaxRadius( val1 );
 			} else if ( sscanf_s( buff, "\tdrr %f", &val1 ) == 1 ) { //dir_radius
 				DirectionalLight* tempDirectionalLight = ( DirectionalLight* )currentLight;

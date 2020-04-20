@@ -313,6 +313,9 @@ bool Mesh::LoadMSHFromFile( const char * msh_relative ) {
 		//clear buff before going to next line
 		std::memset( buff, 0, strlen( buff ) );
 	}
+
+	fclose( fp );
+	return true;
 }
 
 /*
@@ -534,11 +537,11 @@ bool Mesh::LoadOBJFromFile( const char * obj_relative ) {
 }
 
 /*
- ================================
- twoVertsShared
+================================
+twoVertsShared
 	-returns true if exactly two verts are shared between tri_a and tri_b
- ================================
- */
+================================
+*/
 bool twoVertsShared( tri_t * tri_a, tri_t * tri_b ) {
 	unsigned int sharedVertCount = 0;
 	if ( tri_a->a == tri_b->a ) {

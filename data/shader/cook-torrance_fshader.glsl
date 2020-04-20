@@ -160,27 +160,20 @@ float ShadowCalculation( float bias, Light light ) {
 	return cumulativeShadow;
 }
 
-float LightAttenuation( vec3 P, vec3 lightCenter, float lightRadius, float maxRadius, float brightness, float cutoff ) {
+float LightAttenuation( vec3 fragPos, vec3 lightCenter, float lightRadius, float maxRadius, float brightness ) {
 	//https://imdoingitwrong.wordpress.com/2011/01/31/light-attenuation/
 
-	//calculate normalized light vector and distance to sphere light surface
-	float r = lightRadius;
-	float d = max( length( lightCenter - P ) - r, 0.0 );
+	const float fragToLightCenter = length( lightCenter - fragPos );
+	const float fragToLightSurface = max( fragToLightCenter - lightRadius, 0.0 ); //distance form fragPos to light surface
 	
 	//calculate basic attenuation
-	float denom = d / r + 1.0;
+	float denom = fragToLightSurface / lightRadius + 1.0;
 	float attenuation = brightness / ( denom * denom );
-	
-	//scale and bias attenuation such that:
-	//	attenuation == 0 at extent of max influence
-	//	attenuation == 1 when d == 0
-	attenuation = ( attenuation - cutoff ) / ( 1.0 - cutoff );
-	attenuation = max( attenuation, 0.0 );
 
-	//use gausian function to make the attenuation falloff within the lights maxRadius
-	float gaussFactor = pow( E, -4.0 * pow( ( d / maxRadius ), 4.0 ) ) - 0.1;
+	//scale attenuation such that the light effect fits within its maxRadius
+	attenuation *= clamp( 1.0 - fragToLightCenter / maxRadius, 0.0, 1.0 );
 
-	return attenuation * gaussFactor;
+	return attenuation;
 }
 
 float distanceToLine( vec3 a, vec3 ab, vec3 v ) {
@@ -232,7 +225,7 @@ void main() {
 		vec3 lightDir = vec3( currentLight.dir_x, currentLight.dir_y, currentLight.dir_z );
 
 		float attenuation = 1.0;
-		attenuation = LightAttenuation( FragPos, lightPos, currentLight.radius, currentLight.max_radius, currentLight.brightness, 0.001 );
+		attenuation = LightAttenuation( FragPos, lightPos, currentLight.radius, currentLight.max_radius, currentLight.brightness );
 
 		vec3 L;
 		if ( currentLight.typeIndex == 1 ) { //directional light
@@ -261,11 +254,11 @@ void main() {
 		//for directional and spot lights, put everything outside of radius in shadow by scaling the attenuation
 		if ( currentLight.typeIndex == 1 ) { //directional light
 			float dist = distanceToLine( lightPos, lightDir, FragPos );
-			float intensity = clamp( ( currentLight.dir_radius - dist ) / 0.01, 0.0, 1.0 );
+			float intensity = clamp( ( currentLight.dir_radius - dist ) / 0.1, 0.0, 1.0 );
 			attenuation *= intensity;
 		} else if ( currentLight.typeIndex == 2 ) { //spot light
 			float theta = dot( -lightDir, L );
-			float intensity = clamp( ( theta - currentLight.angle ) / 0.01, 0.0, 1.0 );
+			float intensity = clamp( ( theta - currentLight.angle - 0.025 ) / 0.1, 0.0, 1.0 );
 			attenuation *= intensity;
 		}
 

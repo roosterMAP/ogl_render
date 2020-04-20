@@ -464,12 +464,15 @@ void Light::InitLightEffectStorage() {
 		m_boundsUniformBlock.vPos[4].y = 0.0f;
 		m_boundsUniformBlock.vPos[7].y = 0.0f;
 	} else if ( TypeIndex() == 2 ) { //spot light
-		m_boundsUniformBlock.vPos[0] = Vec3( -0.001f, 0.0f, -0.001f );
-		m_boundsUniformBlock.vPos[3] = Vec3( 0.001f, 0.0f, -0.001f );
-		m_boundsUniformBlock.vPos[4] = Vec3( -0.001f, 0.0f, 0.001f );
-		m_boundsUniformBlock.vPos[7] = Vec3( 0.001f, 0.0f, 0.001f );
+		const float min = 0.001f;
+		m_boundsUniformBlock.vPos[0] = Vec3( -min, 0.0f, -min );
+		m_boundsUniformBlock.vPos[3] = Vec3( min, 0.0f, -min );
+		m_boundsUniformBlock.vPos[4] = Vec3( -min, 0.0f, min );
+		m_boundsUniformBlock.vPos[7] = Vec3( min, 0.0f, min );
 
-		const float normalizedWidth = atanf( m_uniformBlock.angle );
+		const float spotLight_angle = 2.0f * acos( m_uniformBlock.angle ); //m_uniformBlock.angle isnt the actual angle.
+		const float m = min / tanf( spotLight_angle / 2.0f );
+		const float normalizedWidth = tanf( spotLight_angle / 2.0f ) * ( 1.0f + m );
 		m_boundsUniformBlock.vPos[1] = Vec3( -normalizedWidth, 1.0f, -normalizedWidth );
 		m_boundsUniformBlock.vPos[2] = Vec3( normalizedWidth, 1.0f, -normalizedWidth );
 		m_boundsUniformBlock.vPos[5] = Vec3( -normalizedWidth, 1.0f, normalizedWidth );
@@ -481,7 +484,9 @@ void Light::InitLightEffectStorage() {
 	translation.Translate( m_uniformBlock.position );
 
 	Mat4 scale = Mat4();
-	const float maxDist = GetMaxRadius();
+	const float d = Vec3( 1.0f, 1.0f, 1.0f ).length();
+	const float r = GetMaxRadius();
+	const float maxDist = GetMaxRadius() * d;
 	for ( int i = 0; i < 3; i++ ) {
 		scale[i][i] = maxDist;
 	}

@@ -9,8 +9,8 @@
 #include "Console.h"
 
 //Global storage of the window size
-int gScreenWidth  = 1200;
-int gScreenHeight = 720;
+int gScreenWidth  = 1920;
+int gScreenHeight = 1080;
 const int gThreadSize = 16; //nvidia
 
 //user input state variables
@@ -268,6 +268,11 @@ void RenderWireframe( const float * view, const float * perspective, const float
 	mainFBO.Unbind();
 }
 
+/*
+================================
+RenderScene
+================================
+*/
 void RenderScene( const float * view, const float * projection ) {
 	//update depth buffers for shadowmaps
 	Light * light = NULL;
@@ -290,6 +295,8 @@ void RenderScene( const float * view, const float * projection ) {
 	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT ); //Clear previous frame values
 	glViewport( 0, 0, gScreenWidth, gScreenHeight ); //Set the OpenGL viewport to be the entire size of the window
 
+	GLuint currentShaderProg = 0;
+
 	MaterialDecl* matDecl;
 	for ( unsigned int i = 0; i < g_scene->MeshCount(); i++ ) {
 		Mesh * mesh = NULL;
@@ -300,48 +307,54 @@ void RenderScene( const float * view, const float * projection ) {
 			matDecl->BindTextures();
 			matDecl->PassVec3Uniforms();
 
-			//pass in camera data
-			matDecl->shader->SetUniformMatrix4f( "view", 1, false, view );
-			matDecl->shader->SetUniformMatrix4f( "projection", 1, false, projection );			
-
 			//exit early if this material is errored out
 			if ( matDecl->m_shaderProg == "error" ) {
+				matDecl->shader->SetUniformMatrix4f( "view", 1, false, view );
+				matDecl->shader->SetUniformMatrix4f( "projection", 1, false, projection );	
 				mesh->DrawSurface( j ); //draw surface
 				continue;
-			}	
-
-			matDecl->shader->SetUniform1i( "screenWidth", 1, &gScreenWidth );
-
-			matDecl->shader->SetUniform3f( "camPos", 1, camera.m_position.as_ptr() );
-
-			//bind the light lookup table
-			const int block_index = matDecl->shader->BufferBlockIndexByName( "light_LUT" );
-			Buffer * ssbo = NULL;
-			if ( block_index == GL_INVALID_INDEX ) {
-				ssbo = ssbo->GetBuffer( "light_LUT" );
-				matDecl->shader->AddBuffer( ssbo );
-			} else {
-				ssbo = matDecl->shader->BufferByBlockIndex( block_index );
-			}
-			glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
-			glBindBufferBase( GL_SHADER_STORAGE_BUFFER, ssbo->GetBindingPoint(), ssbo->GetID() );
-			glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
-
-			//pass lights data
-			for ( int k = 0; k < g_scene->LightCount(); k++ ) {
-				g_scene->LightByIndex( k, &light );
-				if ( k == 0 ) {
-					light->PassDepthAttribute( matDecl->shader, 4 );
-					const int shadowMapPartitionSize = ( unsigned int )( light->s_partitionSize );
-					matDecl->shader->SetUniform1i( "shadowMapPartitionSize", 1, &shadowMapPartitionSize );
-				}				
-				light->PassUniforms( matDecl->shader, k );
 			}
 
-			//pass in EnvProbe data
-			const EnvProbe * probe = mesh->GetProbe();
-			if ( probe != NULL ) {
-				probe->PassUniforms( matDecl->shader, 5 );
+			//pass uniforms
+			const GLuint thisShaderProg = matDecl->shader->GetShaderProgram();
+			if ( thisShaderProg != currentShaderProg ) {
+				currentShaderProg = thisShaderProg;
+
+				//pass in camera data
+				matDecl->shader->SetUniformMatrix4f( "view", 1, false, view );
+				matDecl->shader->SetUniformMatrix4f( "projection", 1, false, projection );
+				matDecl->shader->SetUniform1i( "screenWidth", 1, &gScreenWidth );
+				matDecl->shader->SetUniform3f( "camPos", 1, camera.m_position.as_ptr() );
+
+				//bind the light lookup table
+				const int block_index = matDecl->shader->BufferBlockIndexByName( "light_LUT" );
+				Buffer * ssbo = NULL;
+				if ( block_index == GL_INVALID_INDEX ) {
+					ssbo = ssbo->GetBuffer( "light_LUT" );
+					matDecl->shader->AddBuffer( ssbo );
+				} else {
+					ssbo = matDecl->shader->BufferByBlockIndex( block_index );
+				}
+				glBindBuffer( GL_SHADER_STORAGE_BUFFER, ssbo->GetID() );
+				glBindBufferBase( GL_SHADER_STORAGE_BUFFER, ssbo->GetBindingPoint(), ssbo->GetID() );
+				glBindBuffer( GL_SHADER_STORAGE_BUFFER, 0 );
+
+				//pass lights data
+				for ( int k = 0; k < g_scene->LightCount(); k++ ) {
+					g_scene->LightByIndex( k, &light );
+					if ( k == 0 ) {
+						light->PassDepthAttribute( matDecl->shader, 4 );
+						const int shadowMapPartitionSize = ( unsigned int )( light->s_partitionSize );
+						matDecl->shader->SetUniform1i( "shadowMapPartitionSize", 1, &shadowMapPartitionSize );
+					}				
+					light->PassUniforms( matDecl->shader, k );
+				}
+
+				//pass in EnvProbe data
+				const EnvProbe * probe = mesh->GetProbe();
+				if ( probe != NULL ) {
+					probe->PassUniforms( matDecl->shader, 5 );
+				}
 			}
 	
 			//draw surface
@@ -356,7 +369,7 @@ void RenderScene( const float * view, const float * projection ) {
 DrawFrame
 ================================
 */
-void drawFrame( void ) {
+void DrawFrame( void ) {
 	//start timer
 	std::clock_t start;
 	double duration;
@@ -364,9 +377,6 @@ void drawFrame( void ) {
 
 	//get key inputs from user
 	keyOperations();
-
-	//keyStates['s'] = false;
-	//keyStates['S'] = false;
 
 	//clear buffers
 	glClearColor( 0.0f, 0.0f, 0.0f, 1.0f );
@@ -381,35 +391,33 @@ void drawFrame( void ) {
 	//enable additive blending for the framebuffer we are rendering lights to
 	glEnable( GL_BLEND );
 	glBlendFunc( GL_ONE, GL_ZERO );
-	glBlendEquation( GL_FUNC_ADD );	
-
-	//----------------------------------------------
-	//Draw the scene to the post process framebuffer
-	//----------------------------------------------
+	glBlendEquation( GL_FUNC_ADD );
 	
+	//update camera
 	const float aspect = ( float )gScreenWidth / ( float )gScreenHeight;
-
 	camera.UpdateView();
 	const Mat4 view = camera.GetView();
 	camera.UpdateProjection( aspect );
 	const Mat4 projection = camera.GetProjection();
 
-	//get polygon rendermode from g_cvar_showEdgeHighlights.
-	//0 -> no highlights, 1 -> with highlights, 2 -> only highlights
+	//g_cvar_showEdgeHighlights	
 	unsigned int edgeHighlights_renderMode = 0;
-	if ( g_cvar_showEdgeHighlights->GetState() ) {
+	if ( g_cvar_showEdgeHighlights->GetState() ) { //0 -> no highlights, 1 -> with highlights, 2 -> only highlights
 		const int cvar_showEdgeHighlights_arg = atoi( g_cvar_showEdgeHighlights->GetArgs().c_str() );
 		if ( cvar_showEdgeHighlights_arg > 0 && cvar_showEdgeHighlights_arg < 3 ) {
 			edgeHighlights_renderMode = ( unsigned int )cvar_showEdgeHighlights_arg;
 		}
 	}
 
-	//debulLighting cvar
+	//g_cvar_debugLighting cvar
 	int debugRenderMode = 0;
 	if (  g_cvar_debugLighting->GetState() ) {
 		debugRenderMode = atoi( g_cvar_debugLighting->GetArgs().c_str() );
 	}
 
+	//------------------------
+	// Render Scene ro mainFBO
+	//------------------------
 	if ( debugRenderMode > 0 && debugRenderMode <= 6 ) {		
 		RenderDebug( view.as_ptr(), projection.as_ptr(), debugRenderMode );
 	} else {
@@ -424,12 +432,13 @@ void drawFrame( void ) {
 			RenderWireframe( view.as_ptr(), projection.as_ptr(), edgeColor.as_ptr(), edgeHighlights_renderMode );
 		}
 	}
-
 	glDisable( GL_BLEND ); //since models and lights are finished drawing, turn off blending
+	
 
+	//------------------------
+	// Skybox
+	//------------------------
 	mainFBO.Bind();
-
-	//draw skybox
 	if ( debugRenderMode == 0 ) {
 		MaterialDecl* skyMat;
 		const Cube * sceneSkybox = g_scene->GetSkybox();
@@ -444,12 +453,16 @@ void drawFrame( void ) {
 		}
 	}
 
-	//if cvar is active, draw normal, tangent, and bitangent of all vertices in scene
-	if ( g_cvar_showVertTransform->GetState() ) {		
+	//g_cvar_showVertTransform
+	if ( g_cvar_showVertTransform->GetState() ) {
+		//draw normal, tangent, and bitangent of all vertices in scene
 		RenderVertexTransforms( view.as_ptr(), projection.as_ptr() );
 	}
 
-	//if cvar debug render mode on, skip post process pass
+
+	//------------------------
+	// PostProcess
+	//------------------------
 	if ( debugRenderMode > 0 && debugRenderMode <= 6 ) {
 		//Draw mainFBO to the default buffer directly
 		glBindFramebuffer( GL_READ_FRAMEBUFFER, mainFBO.GetID() );
@@ -570,7 +583,7 @@ bool glSetup( int argc, char ** argv ) {
 	glutKeyboardUpFunc( keyUp );
 	glutMouseFunc( mouseButton );
 	glutPassiveMotionFunc( mouseMovement );
-	glutIdleFunc( drawFrame ); //Setting the idle function to point to the drawFrame function tells GLUT to call this function in GLUT's infinite loop
+	glutIdleFunc( DrawFrame ); //Setting the idle function to point to the DrawFrame function tells GLUT to call this function in GLUT's infinite loop
 	
 	GLenum err = glewInit(); //Initialize GLEW
 
