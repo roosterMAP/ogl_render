@@ -149,6 +149,7 @@ void Texture::InitWithData( const unsigned char * data, const int width, const i
 
 	// Bind this texture so that we can modify and set it up
 	glBindTexture( GL_TEXTURE_2D, mName );
+	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 8.0f ); 
 	
 	// Set the texture wrapping to clamp to edge
 	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT );

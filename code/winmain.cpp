@@ -41,6 +41,7 @@ extern CVar * g_cvar_showEdgeHighlights;
 extern CVar * g_cvar_fps;
 extern CVar * g_cvar_showBloom;
 extern CVar * g_cvar_showSSAO;
+extern CVar * g_cvar_screenshot;
 
 Scene * g_scene = Scene::getInstance(); //declare g_scene singleton
 
@@ -527,6 +528,14 @@ void DrawFrame( void ) {
 	}
 
 	//---------------------
+	//Take screenshot before console draws
+	//---------------------
+	if ( g_cvar_screenshot->GetState() ) {
+		TakeScreenshot();
+		g_cvar_screenshot->SetState( false );		
+	}
+
+	//---------------------
 	//Draw g_console
 	//---------------------
 	g_console->UpdateLog();
@@ -624,7 +633,7 @@ int main( int argc, char ** argv ) {
 	g_console->Init( "data\\fonts\\consolab.ttf" );
 
 	//load empty scene
-	Fn_LoadScene( "data\\scenes\\empty.SCN" );
+	Fn_LoadScene( "data\\scenes\\attenuationTest.SCN" );
 
 	//create main framebuffer to draw to
 	mainFBO.CreateNewBuffer( gScreenWidth, gScreenHeight, "framebuffer" );
@@ -642,7 +651,7 @@ int main( int argc, char ** argv ) {
 	postProcessManager.SetBlitParams( Vec2( 0.0, 0.0 ), Vec2( gScreenWidth, gScreenHeight ), Vec2( 0.0, 0.0 ), Vec2( gScreenWidth, gScreenHeight ) );
 	postProcessManager.BloomEnable( 0.5f );
 	postProcessManager.SSAOEnable( &camera );
-	postProcessManager.LUTEnable( "data\\texture\\system\\LUT_default.tga" );
+	postProcessManager.LUTEnable( "data\\texture\\system\\LUT_jonHall.tga" );
 
 	glutMainLoop(); //Do the infinite loop. This starts glut's inifinite loop.
 

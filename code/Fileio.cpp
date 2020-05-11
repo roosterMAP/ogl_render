@@ -193,7 +193,7 @@ void makeDir( const char * dirName ) {
 	}
 
 	unsigned int i = 0;
-	while( i <= len ){
+	while( i <= len - 1 ){
 		if ( buff[i] == '\\' || buff[i] == '/' ) {
 			if ( dirExists( buff ) == false ) {
 				buff[i] = '\0';

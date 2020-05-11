@@ -178,7 +178,12 @@ void main() {
 	float emissive = texture( albedoTexture, TexCoord ).a;
 	vec3 specular = texture( specularTexture, TexCoord ).rgb;
 	vec3 normal = texture( normalTexture, TexCoord ).rgb;
+	float alpha = texture( normalTexture, TexCoord ).a;
 	float roughness = 1.0 - texture( glossTexture, TexCoord ).r;
+
+	if ( alpha > 0.9 ) {
+		discard;
+	}
 
 	//gamma correct the albedo fragment
 	albedo = pow( albedo, vec3( 2.2 ) );

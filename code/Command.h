@@ -7,6 +7,7 @@
 class CommandSys;
 extern CommandSys * g_cmdSys;
 void Fn_LoadScene( Str args );
+void TakeScreenshot();
 
 class CVar;
 extern CVar * g_cvar_debugLighting;

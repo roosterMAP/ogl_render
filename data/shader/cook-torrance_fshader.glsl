@@ -188,7 +188,12 @@ void main() {
 	float emissive = texture( albedoTexture, TexCoord ).a;
 	vec3 specular = texture( specularTexture, TexCoord ).rgb;
 	vec3 normal = texture( normalTexture, TexCoord ).rgb;
+	float alpha = texture( normalTexture, TexCoord ).a;
 	float roughness = 1.0 - texture( glossTexture, TexCoord ).r;
+	
+	if ( alpha > 0.9 ) {
+		discard;
+	}
 
 	//gamma correct the albedo fragment
 	albedo = pow( albedo, vec3( 2.2 ) );
@@ -258,7 +263,7 @@ void main() {
 			attenuation *= intensity;
 		} else if ( currentLight.typeIndex == 2 ) { //spot light
 			float theta = dot( -lightDir, L );
-			float intensity = clamp( ( theta - currentLight.angle - 0.025 ) / 0.1, 0.0, 1.0 );
+			float intensity = clamp( ( theta - currentLight.angle ) / 0.1, 0.0, 1.0 );
 			attenuation *= intensity;
 		}
 
@@ -284,7 +289,7 @@ void main() {
 	totalRadiance += ambientComponent;
 
 	//emmisive
-	totalRadiance += emissiveColor * emissive;
+	totalRadiance += emissiveColor * ( emissive > 0.1 ? emissive : 0.0 );
 
 	FragColor = vec4( totalRadiance, 1.0 );
 }

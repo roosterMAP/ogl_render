@@ -20,6 +20,7 @@ CVar * g_cvar_brdfIntegrateLUT = new CVar();
 CVar * g_cvar_fps = new CVar();
 CVar * g_cvar_showBloom = new CVar();
 CVar * g_cvar_showSSAO = new CVar();
+CVar * g_cvar_screenshot = new CVar();
 
 CommandSys * g_cmdSys = CommandSys::getInstance(); //declare g_cmdSys singleton
 
@@ -847,6 +848,80 @@ void Fn_ReloadScene( Str args ) {
 
 /*
 ================================
+Fn_Screenshot
+================================
+*/
+void Fn_Screenshot( Str args ) {
+	Console * console = Console::getInstance();
+	args.Strip();
+	if ( args.Length() == 0 ) {
+		console->AddError( "screenshot :: requires filename as an arg!!!" );
+		console->AddInfo( "Screenshot failed." );
+		return;
+	}
+	if ( !args.EndsWith( ".tga" ) && !args.EndsWith( ".png" ) && !args.EndsWith( ".bmp" ) ) {
+		console->AddError( "screenshot :: arg must be a file name with extension tga, png, or bmp!!!" );
+		console->AddInfo( "Screenshot failed." );
+		return;
+	}
+
+	//toggle the state of the cvar
+	if ( g_cvar_screenshot->GetState() ) {
+		g_cvar_screenshot->SetState( false );
+		g_cvar_screenshot->SetArgs( Str( "" ) );
+	} else {
+		g_cvar_screenshot->SetState( true );
+		g_cvar_screenshot->SetArgs( args );
+	}
+}
+
+/*
+================================
+TakeScreenshot
+	-saves img of screen
+	-gets called in winmain.cpp right before console is drawn
+================================
+*/
+void TakeScreenshot() {
+	//get path from filename
+	Str filename = g_cvar_screenshot->GetArgs();
+	Str screenshot_relativePath = Str( "data\\screenshots\\" ) + filename;
+	char screenshot_absolutePath[ 2048 ];
+	RelativePathToFullPath( screenshot_relativePath.c_str(), screenshot_absolutePath );
+
+	char dir_absolutePath[ 2048 ];
+	RelativePathToFullPath( "data\\screenshots", dir_absolutePath );
+	if ( dirExists( dir_absolutePath ) == false ) {
+		makeDir( dir_absolutePath );
+	}
+
+	//allocate memory for screenshot img
+	const unsigned int chanCount = 3;
+	const int width = glutGet( GLUT_WINDOW_WIDTH );
+	const int height = glutGet( GLUT_WINDOW_HEIGHT );
+	unsigned char * screenshot_data = new unsigned char[ chanCount * width * height ];
+
+	//file screenshot img wth that of currently bound framebuffer
+	glPixelStorei( GL_PACK_ALIGNMENT, 1 );
+	glReadPixels( 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, screenshot_data );
+
+	//save image
+	stbi_flip_vertically_on_write( true );
+	if ( filename.EndsWith( ".tga" ) ) {
+		stbi_write_tga( screenshot_absolutePath, width, height, chanCount, screenshot_data );
+	} else if ( filename.EndsWith( ".png" ) ) {
+		stbi_write_png( screenshot_absolutePath, width, height, chanCount, screenshot_data, chanCount * width );
+	} else if ( filename.EndsWith( ".bmp" ) ) {
+		stbi_write_bmp( screenshot_absolutePath, width, height, chanCount, screenshot_data );
+	}
+
+	//cleanup
+	delete[] screenshot_data;
+	g_cvar_screenshot->SetState( false );
+}
+
+/*
+================================
 CommandSys::getInstance
 ================================
 */
@@ -966,6 +1041,12 @@ void CommandSys::BuildCommands() {
 	//set ssao state to enabled by default
 	g_cvar_showSSAO->SetState( true );
 	g_cvar_showSSAO->SetArgs( "1" );
+
+	Cmd * screenshotCommand = new Cmd;
+	screenshotCommand->name = Str( "screenshot" );
+	screenshotCommand->description = Str( "Take a screenshot." );
+	screenshotCommand->fn = Fn_Screenshot;
+	m_commands.push_back( screenshotCommand );
 }
 
 /*
