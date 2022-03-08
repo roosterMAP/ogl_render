@@ -7,8 +7,6 @@
 
 #include "mikktspace.h"
 
-#include "lx_geometry_triangulation_utilities.h"
-
 int mikk_getNumFaces( const SMikkTSpaceContext * pContext ) {
 	surface * data = ( surface * )pContext->m_pUserData;
 	return data->triCount;
@@ -261,15 +259,14 @@ bool Mesh::LoadMSHFromFile( const char * msh_relative ) {
 					polygon_vert_pos_list[ i * 3 + 2 ] = tempVert->pos.z;
 				}
 
-				std::vector<unsigned int> triIndexList = TriangulatePolygon( polygon_vert_index_list, polygon_vert_count, polygon_vert_pos_list );
-				for ( unsigned int i = 0; i < triIndexList.size() / 3; i++ ) {
-					//get vert indexes
-					const unsigned int vidx1 = triIndexList[ i * 3 + 0 ];
-					const unsigned int vidx2 = triIndexList[ i * 3 + 1 ];
-					const unsigned int vidx3 = triIndexList[ i * 3 + 2 ];
+				//break up ngon into triangles
+				const unsigned int vidx0 = polygon_vert_index_list[0]
+				for ( unsigned int i = 2; i < polygon_vert_index_list.size(); i++ ) {
+					const unsigned int vidx1 = polygon_vert_index_list[ i - 1 ]
+					const unsigned int vidx2 = polygon_vert_index_list[ i ];
 
 					//add indexes to tri list (these three make up a triangle)
-					tri_t newTri = { vidx1, vidx2, vidx3 };
+					tri_t newTri = { vidx0, vidx1, vidx2 };
 					currentSurface->tris.push_back( newTri );
 					currentSurface->triCount += 1;
 				}
@@ -483,16 +480,15 @@ bool Mesh::LoadOBJFromFile( const char * obj_relative ) {
 					polygon_vert_pos_list[i*3+j] = m_surfaceVerts[polygon_vert_index_list[i]].pos[j];
 				}
 			}
-			std::vector<unsigned int> triIndexList;
-			triIndexList = TriangulatePolygon( polygon_vert_index_list, polygon_vert_count, polygon_vert_pos_list );
-			for ( unsigned int i = 0; i < triIndexList.size() / 3; i++ ) {
-				//get vert indexes
-				const unsigned int vidx1 = triIndexList[ i * 3 + 0 ];
-				const unsigned int vidx2 = triIndexList[ i * 3 + 1 ];
-				const unsigned int vidx3 = triIndexList[ i * 3 + 2 ];
+
+			//break up ngon into triangles
+			const unsigned int vidx0 = polygon_vert_index_list[0]
+			for ( unsigned int i = 2; i < polygon_vert_index_list.size(); i++ ) {
+				const unsigned int vidx1 = polygon_vert_index_list[ i - 1 ]
+				const unsigned int vidx2 = polygon_vert_index_list[ i ];
 
 				//add indexes to tri list (these three make up a triangle)
-				tri_t newTri = { vidx1, vidx2, vidx3 };
+				tri_t newTri = { vidx0, vidx1, vidx2 };
 				m_surfaceTris.push_back( newTri );
 			}
 
