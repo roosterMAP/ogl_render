@@ -3,7 +3,14 @@ OpenGL rendering engine
 
 This OpenGL renderer written as a learning project.
 I also made a scene to demo the features: https://www.artstation.com/artwork/rRoV5E
-  
+
+## Required Libs
+  - GLEW
+  - FreeGLUT
+  - stb_image single header lib
+  - ISPCTextureCompressor
+
+## Details  
 Much of what I learned came from: https://learnopengl.com/. Such a fantastic resource!
   
 The renderer is a Forward+ Tile Renderer ( https://takahiroharada.files.wordpress.com/2015/04/forward_plus.pdf ), a rendering approach that partitions the screen into small 2D tiles. Lists of lights are associated with each tile in a “DepthPrepass”. Rather than “binning” a light in a tile by using its proximity to said tile, I instead have a LightMesh (a simple triangle mesh whose volume contains all space that could be illuminated by the light) whose triangles are rasterized directly into the tiles using a compute shader. Here was my main resource for learning how rasterization works: https://www.gabrielgambetta.com/computer-graphics-from-scratch/rasterization.html. Because of this approach, rendering things like Spotlights becomes much more efficient because you don’t have to spend time calculating the lighting for fragments outside of the Spotlight's cone of influence.
